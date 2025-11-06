@@ -8,6 +8,8 @@ from typing import List, Optional
 import sys
 from pathlib import Path
 import time
+import aiofiles
+import re
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -391,6 +393,65 @@ async def get_stream_url(track_id: int, quality: str = "LOSSLESS"):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/download/track")
+async def download_track_server_side(background_tasks: BackgroundTasks, track_id: int, artist: str, title: str, quality: str = "LOSSLESS"):
+    """Download track to server-side downloads folder"""
+    try:
+        # Get stream URL
+        track_data = tidal_client.get_track(track_id, quality)
+        if not track_data:
+            raise HTTPException(status_code=404, detail="Track not found")
+        
+        stream_url = extract_stream_url(track_data)
+        if not stream_url:
+            raise HTTPException(status_code=404, detail="Stream URL not found")
+        
+        # Sanitize filename
+        filename = f"{artist} - {title}.flac"
+        filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+        filepath = DOWNLOAD_DIR / filename
+        
+        # Check if already exists
+        if filepath.exists():
+            return {
+                "status": "exists",
+                "filename": filename,
+                "path": str(filepath)
+            }
+        
+        # Download in background
+        async def download_file():
+            try:
+                response = requests.get(stream_url, stream=True, timeout=30)
+                if response.status_code != 200:
+                    print(f"Failed to download {filename}: HTTP {response.status_code}")
+                    return
+                
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                
+                print(f"✓ Downloaded: {filename} ({filepath.stat().st_size / 1024 / 1024:.2f} MB)")
+            except Exception as e:
+                print(f"✗ Download failed: {filename} - {e}")
+                if filepath.exists():
+                    filepath.unlink()
+        
+        background_tasks.add_task(download_file)
+        
+        return {
+            "status": "downloading",
+            "filename": filename,
+            "path": str(filepath)
+        }
+        
+    except Exception as e:
+        print(f"Error initiating download: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 def extract_stream_url(track_data) -> Optional[str]:
     """Extract stream URL from track data"""
     # Handle array response
@@ -430,6 +491,10 @@ def extract_stream_url(track_data) -> Optional[str]:
                 print(f"Failed to decode manifest: {e}")
     
     return None
+
+# Add at top
+DOWNLOAD_DIR = Path(__file__).parent.parent / "downloads"
+DOWNLOAD_DIR.mkdir(exist_ok=True)
 
 if __name__ == "__main__":
     import uvicorn

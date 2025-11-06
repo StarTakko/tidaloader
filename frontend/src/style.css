@@ -478,3 +478,162 @@ button:disabled {
 .artist-item {
   min-height: 100px;
 }
+
+/* Download Queue */
+.download-queue {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.queue-stats {
+  display: flex;
+  gap: 15px;
+  font-size: 14px;
+  color: #aaa;
+}
+
+.queue-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.start-btn,
+.stop-btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.start-btn {
+  background: #1db954;
+  color: white;
+}
+
+.start-btn:hover:not(:disabled) {
+  background: #1ed760;
+}
+
+.stop-btn {
+  background: #e74c3c;
+  color: white;
+}
+
+.stop-btn:hover {
+  background: #c0392b;
+}
+
+.queue-section {
+  margin-bottom: 20px;
+}
+
+.queue-section h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+.queue-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.queue-item.downloading {
+  background: #2a3a2a;
+}
+
+.queue-item.failed {
+  background: #3a2a2a;
+}
+
+.track-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error-text {
+  font-size: 12px;
+  color: #e74c3c;
+}
+
+.progress-bar {
+  position: relative;
+  width: 200px;
+  height: 20px;
+  background: #333;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.progress {
+  height: 100%;
+  background: linear-gradient(90deg, #1db954, #1ed760);
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.remove-btn,
+.retry-btn,
+.clear-btn {
+  padding: 4px 8px;
+  background: #444;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.remove-btn:hover {
+  background: #e74c3c;
+}
+
+.retry-btn:hover {
+  background: #1db954;
+}
+
+.clear-btn:hover {
+  background: #e74c3c;
+}
+
+.completed-summary {
+  padding: 15px;
+  background: #1a3a1a;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
