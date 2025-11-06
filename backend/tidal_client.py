@@ -120,3 +120,7 @@ class TidalAPIClient:
     def get_album_tracks(self, album_id: int) -> Optional[Dict]:
         """Get album tracks specifically"""
         return self._make_request("/album/tracks", {"id": album_id}, operation="get_album_tracks")
+    
+    def get_artist(self, artist_id: int) -> Optional[Dict]:
+        """Get artist details with tracks and albums"""
+        return self._make_request("/artist/", {"f": artist_id}, operation="get_artist")

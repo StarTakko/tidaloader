@@ -637,3 +637,447 @@ button:disabled {
   padding: 40px;
   color: #666;
 }
+
+/* Artist Page */
+.artist-page {
+  background: #1a1a1a;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.back-btn {
+  background: #333;
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  display: inline-block;
+}
+
+.back-btn:hover {
+  background: #444;
+}
+
+.artist-header {
+  background: #2a2a2a;
+  padding: 30px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.artist-info-header {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  margin-bottom: 20px;
+}
+
+.artist-header-picture {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.artist-header-placeholder {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1db954, #1ed760);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 60px;
+  font-weight: bold;
+  color: #000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.artist-header-text h2 {
+  font-size: 48px;
+  margin: 0 0 10px 0;
+}
+
+.artist-stats {
+  color: #999;
+  font-size: 14px;
+}
+
+.download-discography-btn {
+  width: 100%;
+  padding: 15px;
+  background: #1db954;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.download-discography-btn:hover:not(:disabled) {
+  background: #1ed760;
+}
+
+.artist-section {
+  margin-bottom: 40px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #333;
+}
+
+.section-header h3 {
+  font-size: 24px;
+  margin: 0;
+}
+
+.section-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.select-all-btn,
+.deselect-all-btn {
+  background: #444;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.select-all-btn:hover {
+  background: #555;
+}
+
+.deselect-all-btn:hover {
+  background: #555;
+}
+
+.download-selected-btn {
+  background: #1db954;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.download-selected-btn:hover:not(:disabled) {
+  background: #1ed760;
+}
+
+/* Album Grid for Artist Page */
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 20px;
+}
+
+.album-card-selectable {
+  background: #2a2a2a;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.album-card-selectable:hover {
+  background: #333;
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.album-card-label {
+  display: block;
+  cursor: pointer;
+  position: relative;
+}
+
+.album-checkbox {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.album-card-selectable .album-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.album-card-selectable .album-info {
+  padding: 15px;
+}
+
+.album-card-selectable .album-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.album-card-selectable .album-tracks,
+.album-card-selectable .album-year {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+/* Track List for Artist Page */
+.artist-section .track-list {
+  max-height: none;
+}
+
+.artist-section .track-item {
+  background: #2a2a2a;
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.artist-section .track-item:hover {
+  background: #333;
+}
+
+.artist-section .track-item label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.artist-section .track-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.artist-section .track-cover {
+  width: 50px;
+  height: 50px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+}
+
+.empty-state p {
+  font-size: 16px;
+  margin: 10px 0;
+}
+
+/* Loading Message */
+.loading-message {
+  background: #2a5298;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* Error Message */
+.error-message {
+  background: #c41e3a;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .artist-info-header {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .artist-header-picture,
+  .artist-header-placeholder {
+    width: 120px;
+    height: 120px;
+    font-size: 48px;
+  }
+
+  .artist-header-text h2 {
+    font-size: 32px;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .section-controls {
+    width: 100%;
+  }
+
+  .album-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 15px;
+  }
+}
+
+/* Smooth Transitions */
+.artist-page * {
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+/* Selected State Highlight */
+.album-card-selectable:has(input:checked) {
+  border: 2px solid #1db954;
+  box-shadow: 0 0 12px rgba(29, 185, 84, 0.3);
+}
+
+.track-item:has(input:checked) {
+  background: #1a3a1a !important;
+}
+
+/* Album Page */
+.album-page {
+  background: #1a1a1a;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.album-header {
+  background: #2a2a2a;
+  padding: 30px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.album-info-header {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  margin-bottom: 20px;
+}
+
+.album-header-cover {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.album-header-placeholder {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1db954, #1ed760);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 80px;
+  font-weight: bold;
+  color: #000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.album-header-text h2 {
+  font-size: 42px;
+  margin: 0 0 10px 0;
+}
+
+.album-artist-name {
+  font-size: 18px;
+  color: #bbb;
+  margin-bottom: 10px;
+}
+
+.album-metadata {
+  font-size: 14px;
+  color: #999;
+}
+
+.download-all-btn {
+  width: 100%;
+  padding: 15px;
+  background: #1db954;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.download-all-btn:hover:not(:disabled) {
+  background: #1ed760;
+}
+
+.album-section {
+  margin-bottom: 40px;
+}
+
+.album-section .track-list {
+  max-height: none; /* Remove any height restriction */
+}
+
+/* Album Track List */
+.album-track-item {
+  background: #2a2a2a;
+  padding: 12px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.album-track-item:hover {
+  background: #333;
+}
+
+.album-track-item label {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  cursor: pointer;
+}
+
+.album-track-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.track-number {
+  font-size: 16px;
+  color: #999;
+  font-weight: 600;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* Responsive Album Page */
+@media (max-width: 768px) {
+  .album-info-header {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .album-header-cover,
+  .album-header-placeholder {
+    width: 160px;
+    height: 160px;
+    font-size: 64px;
+  }
+
+  .album-header-text h2 {
+    font-size: 28px;
+  }
+
+  .album-artist-name {
+    font-size: 16px;
+  }
+}

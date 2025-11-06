@@ -287,38 +287,64 @@ async def get_album_tracks(album_id: int):
         
         print(f"Album API response type: {type(result)}")
         
-        # Extract raw items - API returns [album_metadata, {'items': [track_wrappers]}]
-        raw_items = extract_track_data(result)
+        # Extract album metadata and tracks from response
+        # API returns: [album_metadata, {'items': [track_wrappers]}]
+        album_metadata = None
+        raw_items = []
         
+        if isinstance(result, list):
+            # First element should be album metadata
+            if len(result) > 0 and isinstance(result[0], dict):
+                if 'title' in result[0] and 'id' in result[0]:
+                    album_metadata = result[0]
+            
+            # Look for tracks in subsequent elements
+            for item in result:
+                if isinstance(item, dict) and 'items' in item:
+                    raw_items = item['items']
+                    break
+        elif isinstance(result, dict):
+            if 'items' in result:
+                raw_items = result['items']
+            # Check if the dict itself is album metadata
+            if 'title' in result and 'id' in result:
+                album_metadata = result
+        
+        print(f"Found album metadata: {album_metadata is not None}")
         print(f"Found {len(raw_items)} raw items")
-        if raw_items and len(raw_items) > 0:
-            print(f"First raw item keys: {list(raw_items[0].keys())}")
         
         # Extract actual tracks from wrapper objects
-        # Each item can be: {'item': track_data, 'type': 'track'} or just track_data
         tracks = []
         for raw_item in raw_items:
             if not raw_item or not isinstance(raw_item, dict):
                 continue
             
             # Check if track data is nested under 'item' key
-            if 'item' in raw_item and isinstance(raw_item['item'], dict):
-                tracks.append(raw_item['item'])
-            else:
-                # Direct track object
-                tracks.append(raw_item)
+            track_data = raw_item.get('item', raw_item)
+            
+            if not isinstance(track_data, dict):
+                continue
+            
+            # Enrich track with album metadata if available
+            if album_metadata:
+                if 'album' not in track_data or not track_data['album']:
+                    track_data['album'] = album_metadata
+                elif isinstance(track_data.get('album'), dict):
+                    # Merge album metadata to ensure complete data
+                    track_data['album'] = {
+                        **album_metadata,
+                        **track_data['album']
+                    }
+            
+            tracks.append(track_data)
         
-        print(f"Extracted {len(tracks)} tracks from wrappers")
-        if tracks:
-            print(f"First track keys: {list(tracks[0].keys())[:15]}")
+        print(f"Extracted {len(tracks)} tracks")
         
         # Build response with error handling
         track_results = []
         for track in tracks:
             try:
-                # Get track ID
                 track_id = track.get('id')
-                
                 if not track_id:
                     print(f"Warning: Track missing ID: {track.get('title', 'Unknown')}")
                     continue
@@ -335,12 +361,14 @@ async def get_album_tracks(album_id: int):
                     if isinstance(first_artist, dict):
                         artist_name = first_artist.get('name', 'Unknown')
                 
-                # Handle album data
-                album_title = None
-                album_cover = None
-                if 'album' in track and isinstance(track['album'], dict):
-                    album_title = track['album'].get('title')
-                    album_cover = track['album'].get('cover')
+                # Handle album data - use enriched album metadata
+                album_dict = track.get('album')
+                if isinstance(album_dict, dict):
+                    album_title = album_dict.get('title')
+                    album_cover = album_dict.get('cover')
+                else:
+                    album_title = None
+                    album_cover = None
                 
                 track_results.append(TrackSearchResult(
                     id=track_id,
@@ -353,11 +381,27 @@ async def get_album_tracks(album_id: int):
                 ))
             except Exception as e:
                 print(f"Error processing track: {e}")
-                print(f"Track data keys: {list(track.keys()) if isinstance(track, dict) else 'not a dict'}")
                 continue
         
         print(f"Successfully processed {len(track_results)} tracks")
-        return {"items": track_results}
+        
+        # Return tracks with album metadata
+        response_data = {"items": track_results}
+        
+        # Include album metadata if we found it
+        if album_metadata:
+            response_data["album"] = {
+                "id": album_metadata.get('id'),
+                "title": album_metadata.get('title'),
+                "cover": album_metadata.get('cover'),
+                "artist": album_metadata.get('artist'),
+                "releaseDate": album_metadata.get('releaseDate'),
+                "numberOfTracks": album_metadata.get('numberOfTracks'),
+                "numberOfVolumes": album_metadata.get('numberOfVolumes'),
+            }
+            print(f"Including album metadata: {album_metadata.get('title')}")
+        
+        return response_data
         
     except HTTPException:
         raise
@@ -669,3 +713,167 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+@app.get("/api/artist/{artist_id}")
+async def get_artist(artist_id: int):
+    """Get artist details with top tracks and albums"""
+    try:
+        print(f"Fetching artist {artist_id}...")
+        result = tidal_client.get_artist(artist_id)
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Artist not found")
+        
+        print(f"Artist API response type: {type(result)}")
+        
+        # Parse the complex nested structure
+        artist_data = None
+        tracks = []
+        albums = []
+        visited = set()  # Track visited objects to avoid infinite loops
+        
+        def is_track_like(obj):
+            """Check if object looks like a track"""
+            if not isinstance(obj, dict):
+                return False
+            return all(key in obj for key in ['id', 'title', 'duration']) and 'album' in obj
+        
+        def is_album_like(obj):
+            """Check if object looks like an album"""
+            if not isinstance(obj, dict):
+                return False
+            return all(key in obj for key in ['id', 'title', 'cover'])
+        
+        def is_artist_like(obj):
+            """Check if object looks like artist metadata"""
+            if not isinstance(obj, dict):
+                return False
+            return all(key in obj for key in ['id', 'name', 'type'])
+        
+        def scan_value(value, depth=0):
+            """Recursively scan for tracks and albums"""
+            if depth > 10:  # Prevent infinite recursion
+                return
+            
+            if not value:
+                return
+            
+            # Handle arrays
+            if isinstance(value, list):
+                for item in value:
+                    scan_value(item, depth + 1)
+                return
+            
+            # Handle objects
+            if not isinstance(value, dict):
+                return
+            
+            # Avoid revisiting same object
+            obj_id = id(value)
+            if obj_id in visited:
+                return
+            visited.add(obj_id)
+            
+            # Check if it's artist metadata
+            if is_artist_like(value):
+                nonlocal artist_data
+                if not artist_data:
+                    artist_data = value
+            
+            # Check for tracks in 'items' array
+            if 'items' in value and isinstance(value['items'], list):
+                for item in value['items']:
+                    if not isinstance(item, dict):
+                        continue
+                    
+                    # Handle wrapper objects with 'item' key
+                    actual_item = item.get('item', item)
+                    
+                    if is_track_like(actual_item):
+                        tracks.append(actual_item)
+                    elif is_album_like(actual_item):
+                        albums.append(actual_item)
+            
+            # Check for modules (contains pagedList with albums)
+            if 'modules' in value and isinstance(value['modules'], list):
+                for module in value['modules']:
+                    if isinstance(module, dict):
+                        # Check for pagedList
+                        if 'pagedList' in module:
+                            paged_list = module['pagedList']
+                            if isinstance(paged_list, dict):
+                                scan_value(paged_list, depth + 1)
+                        
+                        # Also scan the module itself
+                        scan_value(module, depth + 1)
+            
+            # Recursively scan all values
+            for nested_value in value.values():
+                scan_value(nested_value, depth + 1)
+        
+        # Start scanning from root
+        scan_value(result)
+        
+        # Fallback: If no artist data found, try to get from tracks/albums
+        if not artist_data:
+            # Try to extract from first track
+            if tracks and 'artist' in tracks[0]:
+                artist_obj = tracks[0]['artist']
+                if isinstance(artist_obj, dict):
+                    artist_data = artist_obj
+            
+            # Try to extract from first album
+            elif albums and 'artist' in albums[0]:
+                artist_obj = albums[0]['artist']
+                if isinstance(artist_obj, dict):
+                    artist_data = artist_obj
+        
+        # Still no artist? Create minimal one
+        if not artist_data:
+            artist_data = {
+                'id': artist_id,
+                'name': 'Unknown Artist'
+            }
+        
+        # Sort tracks by popularity (if available)
+        tracks_sorted = sorted(
+            tracks,
+            key=lambda t: t.get('popularity', 0),
+            reverse=True
+        )[:50]  # Top 50 tracks
+        
+        # Sort albums by release date (newest first)
+        def get_album_timestamp(album):
+            release_date = album.get('releaseDate')
+            if not release_date:
+                return 0
+            try:
+                from datetime import datetime
+                return datetime.fromisoformat(release_date.replace('Z', '+00:00')).timestamp()
+            except:
+                return 0
+        
+        albums_sorted = sorted(
+            albums,
+            key=get_album_timestamp,
+            reverse=True
+        )
+        
+        print(f"Found: {len(tracks_sorted)} tracks, {len(albums_sorted)} albums")
+        if tracks_sorted:
+            print(f"Sample track: {tracks_sorted[0].get('title', 'Unknown')}")
+        if albums_sorted:
+            print(f"Sample album: {albums_sorted[0].get('title', 'Unknown')}")
+        
+        return {
+            "artist": artist_data,
+            "tracks": tracks_sorted,
+            "albums": albums_sorted
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting artist: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
