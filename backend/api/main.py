@@ -18,6 +18,7 @@ import aiohttp
 import os
 from dotenv import load_dotenv
 from mutagen.flac import FLAC, Picture
+from mutagen.mp4 import MP4, MP4Cover  # Add this import for AAC/M4A files
 from lyrics_client import lyrics_client
 
 load_dotenv()
@@ -192,7 +193,7 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
                             
                             await asyncio.sleep(0.01)
         
-        # Write metadata tags
+        # Write metadata tags (if metadata provided)
         if metadata:
             print(f"\n[4/4] Writing metadata tags...")
             await write_metadata_tags(filepath, metadata)
@@ -234,7 +235,35 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
 
 
 async def write_metadata_tags(filepath: Path, metadata: dict):
-    """Write metadata tags to FLAC file using Mutagen"""
+    """Write metadata tags to FLAC or M4A file using Mutagen"""
+    try:
+        # Detect file type by checking magic bytes
+        with open(filepath, 'rb') as f:
+            header = f.read(12)
+        
+        is_flac = header[:4] == b'fLaC'
+        is_m4a = header[4:8] == b'ftyp' or header[4:12] == b'ftypM4A '
+        
+        quality = metadata.get('quality', 'UNKNOWN')
+        
+        if is_flac:
+            print(f"  File format: FLAC ({quality})")
+            await write_flac_metadata(filepath, metadata)
+        elif is_m4a:
+            print(f"  File format: M4A/AAC ({quality})")
+            await write_m4a_metadata(filepath, metadata)
+        else:
+            print(f"  ⚠️  Unknown file format, skipping metadata")
+            print(f"  Header: {header.hex()}")
+        
+    except Exception as e:
+        print(f"  ⚠️  Failed to write metadata: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def write_flac_metadata(filepath: Path, metadata: dict):
+    """Write metadata tags to FLAC file"""
     try:
         audio = FLAC(str(filepath))
         
@@ -258,7 +287,7 @@ async def write_metadata_tags(filepath: Path, metadata: dict):
         if metadata.get('genre'):
             audio['GENRE'] = metadata['genre']
         
-        # MusicBrainz IDs for Picard
+        # MusicBrainz IDs
         if metadata.get('musicbrainz_trackid'):
             audio['MUSICBRAINZ_TRACKID'] = metadata['musicbrainz_trackid']
         if metadata.get('musicbrainz_albumid'):
@@ -268,29 +297,8 @@ async def write_metadata_tags(filepath: Path, metadata: dict):
         if metadata.get('musicbrainz_albumartistid'):
             audio['MUSICBRAINZ_ALBUMARTISTID'] = metadata['musicbrainz_albumartistid']
         
-        # Lyrics - fetch from LrcLib (but DON'T embed in FLAC)
-        # We'll only save to external .lrc file to preserve timing accuracy
-        if metadata.get('title') and metadata.get('artist'):
-            try:
-                print(f"  🎤 Fetching lyrics...")
-                lyrics_result = await lyrics_client.get_lyrics(
-                    track_name=metadata['title'],
-                    artist_name=metadata['artist'],
-                    album_name=metadata.get('album'),
-                    duration=metadata.get('duration')
-                )
-                
-                if lyrics_result:
-                    # Store synced lyrics in metadata for .lrc file creation
-                    if lyrics_result.synced_lyrics:
-                        metadata['synced_lyrics'] = lyrics_result.synced_lyrics
-                        print(f"  ✓ Synced lyrics found (will save to .lrc)")
-                    elif lyrics_result.plain_lyrics:
-                        metadata['plain_lyrics'] = lyrics_result.plain_lyrics
-                        print(f"  ✓ Plain lyrics found (will save to .txt)")
-                    
-            except Exception as e:
-                print(f"  ⚠️  Failed to fetch lyrics: {e}")
+        # Fetch and store lyrics
+        await fetch_and_store_lyrics(filepath, metadata, audio)
         
         # Cover art
         if metadata.get('cover_url'):
@@ -310,12 +318,104 @@ async def write_metadata_tags(filepath: Path, metadata: dict):
                 print(f"  ⚠️  Failed to add cover art: {e}")
         
         audio.save()
-        print(f"  ✓ Metadata tags written")
+        print(f"  ✓ FLAC metadata tags written")
         
     except Exception as e:
-        print(f"  ⚠️  Failed to write metadata: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"  ⚠️  Failed to write FLAC metadata: {e}")
+        raise
+
+
+async def write_m4a_metadata(filepath: Path, metadata: dict):
+    """Write metadata tags to M4A/AAC file"""
+    try:
+        audio = MP4(str(filepath))
+        
+        # Basic tags (M4A uses different tag names)
+        if metadata.get('title'):
+            audio['\xa9nam'] = metadata['title']
+        if metadata.get('artist'):
+            audio['\xa9ART'] = metadata['artist']
+        if metadata.get('album'):
+            audio['\xa9alb'] = metadata['album']
+        if metadata.get('album_artist'):
+            audio['aART'] = metadata['album_artist']
+        if metadata.get('date'):
+            audio['\xa9day'] = metadata['date']
+        if metadata.get('genre'):
+            audio['\xa9gen'] = metadata['genre']
+        
+        # Track number (M4A format: [(track, total_tracks)])
+        if metadata.get('track_number'):
+            track_num = metadata['track_number']
+            total_tracks = metadata.get('total_tracks', 0)
+            audio['trkn'] = [(track_num, total_tracks)]
+        
+        # Disc number
+        if metadata.get('disc_number'):
+            disc_num = metadata['disc_number']
+            audio['disk'] = [(disc_num, 0)]
+        
+        # Fetch and store lyrics (external files only for M4A)
+        await fetch_and_store_lyrics(filepath, metadata, None)
+        
+        # Cover art
+        if metadata.get('cover_url'):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(metadata['cover_url']) as response:
+                        if response.status == 200:
+                            image_data = await response.read()
+                            audio['covr'] = [MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)]
+                            print(f"  ✓ Added cover art")
+            except Exception as e:
+                print(f"  ⚠️  Failed to add cover art: {e}")
+        
+        audio.save()
+        print(f"  ✓ M4A metadata tags written")
+        
+    except Exception as e:
+        print(f"  ⚠️  Failed to write M4A metadata: {e}")
+        raise
+
+
+async def fetch_and_store_lyrics(filepath: Path, metadata: dict, audio_file=None):
+    """Fetch lyrics from LrcLib and store them"""
+    if metadata.get('title') and metadata.get('artist'):
+        try:
+            print(f"  🎤 Fetching lyrics...")
+            lyrics_result = await lyrics_client.get_lyrics(
+                track_name=metadata['title'],
+                artist_name=metadata['artist'],
+                album_name=metadata.get('album'),
+                duration=metadata.get('duration')
+            )
+            
+            if lyrics_result:
+                # Store synced lyrics in metadata for .lrc file creation
+                if lyrics_result.synced_lyrics:
+                    metadata['synced_lyrics'] = lyrics_result.synced_lyrics
+                    print(f"  ✓ Synced lyrics found (will save to .lrc)")
+                elif lyrics_result.plain_lyrics:
+                    metadata['plain_lyrics'] = lyrics_result.plain_lyrics
+                    print(f"  ✓ Plain lyrics found (will save to .txt)")
+                
+        except Exception as e:
+            print(f"  ⚠️  Failed to fetch lyrics: {e}")
+        
+        # If audio file object is provided, embed lyrics as metadata (for FLAC only)
+        if audio_file and metadata.get('synced_lyrics'):
+            try:
+                lyrics_text = metadata['synced_lyrics']
+                
+                # Split lyrics into lines and add as separate tags
+                for i, line in enumerate(lyrics_text.split('\n')):
+                    if line.strip():
+                        # Use custom tag for embedded lyrics
+                        audio_file[f'LYRICS_LINE_{i+1}'] = line.strip()
+                
+                print(f"  ✓ Embedded {len(lyrics_text.splitlines())} lines of lyrics")
+            except Exception as e:
+                print(f"  ⚠️  Failed to embed lyrics: {e}")
 
 def sanitize_path_component(name: str) -> str:
     """Sanitize a string to be used as a file/folder name"""
@@ -347,6 +447,13 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path
         album = metadata.get('album', 'Unknown Album')
         title = metadata.get('title', temp_filepath.stem)
         track_number = metadata.get('track_number')
+        quality = metadata.get('quality', 'LOSSLESS')
+        
+        # Determine file extension based on quality
+        if quality in ['LOW', 'HIGH']:
+            file_ext = '.m4a'  # AAC files
+        else:
+            file_ext = '.flac'  # FLAC files
         
         # Sanitize path components
         artist_folder = sanitize_path_component(artist)
@@ -356,11 +463,11 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path
         if track_number:
             # Pad track number to 2 digits
             track_str = str(track_number).zfill(2)
-            filename = f"{track_str} - {sanitize_path_component(title)}.flac"
+            filename = f"{track_str} - {sanitize_path_component(title)}{file_ext}"
         else:
-            filename = f"{sanitize_path_component(title)}.flac"
+            filename = f"{sanitize_path_component(title)}{file_ext}"
         
-        # Create full path: DOWNLOAD_DIR/Artist/Album/Song.flac
+        # Create full path: DOWNLOAD_DIR/Artist/Album/Song.ext
         final_dir = DOWNLOAD_DIR / artist_folder / album_folder
         final_path = final_dir / filename
         
@@ -931,7 +1038,7 @@ async def download_track_server_side(
             raise HTTPException(status_code=404, detail="Track not found")
         
         # Extract metadata
-        metadata = {}
+        metadata = {'quality': request.quality}  # Store quality in metadata
         if isinstance(track_info, list) and len(track_info) > 0:
             track_data = track_info[0]
         else:
@@ -980,8 +1087,14 @@ async def download_track_server_side(
         
         print(f"✓ Stream URL: {stream_url[:60]}...")
         
+        # Determine file extension based on quality
+        if request.quality in ['LOW', 'HIGH']:
+            file_ext = '.m4a'
+        else:
+            file_ext = '.flac'
+        
         # Create temporary filename for initial download
-        temp_filename = f"{request.artist} - {request.title}.flac"
+        temp_filename = f"{request.artist} - {request.title}{file_ext}"
         temp_filename = re.sub(r'[<>:"/\\|?*]', '_', temp_filename)
         temp_filepath = DOWNLOAD_DIR / temp_filename
         
@@ -996,9 +1109,9 @@ async def download_track_server_side(
         
         if track_number:
             track_str = str(track_number).zfill(2)
-            final_filename = f"{track_str} - {sanitize_path_component(title)}.flac"
+            final_filename = f"{track_str} - {sanitize_path_component(title)}{file_ext}"
         else:
-            final_filename = f"{sanitize_path_component(title)}.flac"
+            final_filename = f"{sanitize_path_component(title)}{file_ext}"
         
         final_filepath = DOWNLOAD_DIR / artist_folder / album_folder / final_filename
         
