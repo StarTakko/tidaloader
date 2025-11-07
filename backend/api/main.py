@@ -279,15 +279,22 @@ async def write_metadata_tags(filepath: Path, metadata: dict):
                 )
                 
                 if lyrics_result:
-                    # Prefer synced lyrics (LRC format)
-                    if lyrics_result.synced_lyrics:
-                        audio['LYRICS'] = lyrics_result.synced_lyrics
-                        # Store synced lyrics in metadata for later saving
-                        metadata['synced_lyrics'] = lyrics_result.synced_lyrics
-                        print(f"  ✓ Added synced lyrics (LRC format)")
-                    elif lyrics_result.plain_lyrics:
+                    # Store PLAIN lyrics in the FLAC tag (no timestamps)
+                    # This prevents sync issues with players that don't support LRC in tags
+                    if lyrics_result.plain_lyrics:
                         audio['LYRICS'] = lyrics_result.plain_lyrics
-                        print(f"  ✓ Added plain lyrics")
+                        print(f"  ✓ Added plain lyrics to metadata")
+                    elif lyrics_result.synced_lyrics:
+                        # If only synced lyrics exist, strip timestamps for the tag
+                        import re
+                        plain_from_synced = re.sub(r'\[[\d:.]+\]\s*', '', lyrics_result.synced_lyrics)
+                        audio['LYRICS'] = plain_from_synced.strip()
+                        print(f"  ✓ Added lyrics to metadata (timestamps stripped)")
+                    
+                    # Store synced lyrics separately for .lrc file
+                    if lyrics_result.synced_lyrics:
+                        metadata['synced_lyrics'] = lyrics_result.synced_lyrics
+                        print(f"  ✓ Synced lyrics available for .lrc file")
                     
             except Exception as e:
                 print(f"  ⚠️  Failed to fetch lyrics: {e}")
