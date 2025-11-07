@@ -17,6 +17,9 @@ from contextlib import asynccontextmanager
 import json
 import aiohttp
 from fastapi import BackgroundTasks
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -710,6 +713,30 @@ def extract_stream_url(track_data) -> Optional[str]:
 DOWNLOAD_DIR = Path(__file__).parent.parent / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
+# Serve frontend static files
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
+if frontend_dist.exists():
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+    
+    # Serve index.html for all other routes (SPA)
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Don't serve frontend for API routes
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Serve index.html for all non-API routes
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        
+        raise HTTPException(status_code=404, detail="Frontend not built")
+else:
+    print("Warning: Frontend dist folder not found. Run 'npm run build' in frontend directory.")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
@@ -877,3 +904,4 @@ async def get_artist(artist_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+        
