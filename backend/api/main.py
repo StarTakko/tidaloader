@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 from typing import List, Optional
 import sys
 from pathlib import Path
@@ -14,6 +15,10 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import aiohttp
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -31,6 +36,15 @@ app.add_middleware(
 )
 
 tidal_client = TidalAPIClient()
+
+class Settings(BaseSettings):
+    music_dir: str = str(Path.home() / "music")
+    
+    class Config:
+        env_file = Path(__file__).parent.parent / ".env"
+        case_sensitive = False
+
+settings = Settings()
 
 class TroiGenerateRequest(BaseModel):
     username: str
@@ -59,8 +73,10 @@ class DownloadTrackRequest(BaseModel):
     title: str
     quality: str = "LOSSLESS"
 
-DOWNLOAD_DIR = Path(__file__).parent.parent / "downloads"
-DOWNLOAD_DIR.mkdir(exist_ok=True)
+DOWNLOAD_DIR = Path(settings.music_dir)
+DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+print(f"Download directory: {DOWNLOAD_DIR}")
 
 active_downloads = {}
 
