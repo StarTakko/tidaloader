@@ -1,7 +1,7 @@
 services:
-  squidloader-troi:
+  tidaloader:
     build: .
-    container_name: squidloader-troi
+    container_name: tidaloader
     ports:
       - "8001:8001"
     environment:
