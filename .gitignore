@@ -5,3 +5,48 @@ frontend/package-lock.json
 frontend/node_modules/
 tidal-ui-src-reference/
 backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment - ignore actual .env but keep .env.example
+.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Downloads and Music
+downloads/
+music/*
+!music/.gitkeep
+
+# Logs
+*.log
+
+# Build
+frontend/dist/
+frontend/build/

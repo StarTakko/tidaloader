@@ -24,7 +24,7 @@ A full-stack web application for downloading high-quality music from Tidal with 
 ## Project Structure
 
 ```
-squidloader-troi/
+tidaloader/
 ├── backend/
 │   ├── api/
 │   │   ├── __init__.py
@@ -82,6 +82,195 @@ squidloader-troi/
 - Termux:Boot (optional, for auto-start)
 
 ## Installation
+
+## Docker Installation (Recommended)
+
+The easiest way to run SquidLoader Troi is using Docker. This works on Windows, macOS, and Linux.
+
+### Prerequisites
+
+- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+- Docker Compose (included with Docker Desktop)
+
+### Quick Start
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/RayZ3R0/squidloader-troi.git
+   cd squidloader-troi
+   ```
+
+2. **Create environment file**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` and set your credentials and music directory:
+
+   **Windows:**
+
+   ```env
+   AUTH_USERNAME=admin
+   AUTH_PASSWORD=your-secure-password
+   MUSIC_DIR=/music
+   MUSIC_DIR_HOST=C:/Users/YourName/Music
+   ```
+
+   **Linux/Mac:**
+
+   ```env
+   AUTH_USERNAME=admin
+   AUTH_PASSWORD=your-secure-password
+   MUSIC_DIR=/music
+   MUSIC_DIR_HOST=/home/yourname/Music
+   ```
+
+   **Default (uses project folder):**
+
+   ```env
+   AUTH_USERNAME=admin
+   AUTH_PASSWORD=your-secure-password
+   MUSIC_DIR=/music
+   MUSIC_DIR_HOST=./music
+   ```
+
+3. **Start the application**
+
+   ```bash
+   docker-compose up -d
+   ```
+
+   First run will take a few minutes to build the image.
+
+4. **Access the application**
+
+   Open your browser to `http://localhost:8001`
+
+### Docker Commands
+
+**View logs:**
+
+```bash
+docker-compose logs -f
+```
+
+**Stop the application:**
+
+```bash
+docker-compose down
+```
+
+**Restart the application:**
+
+```bash
+docker-compose restart
+```
+
+**Rebuild after code changes:**
+
+```bash
+docker-compose up -d --build
+```
+
+**Update to latest version:**
+
+```bash
+git pull
+docker-compose up -d --build
+```
+
+### Music Files
+
+By default, music is downloaded to `./music` in your project folder. To use a custom location:
+
+1. Edit `.env`:
+
+   ```env
+   MUSIC_DIR_HOST=/your/custom/path
+   ```
+
+2. Restart the container:
+   ```bash
+   docker-compose up -d
+   ```
+
+The music directory is automatically created if it doesn't exist.
+
+### Customization
+
+**Change port:**
+
+Edit `docker-compose.yml`:
+
+```yaml
+ports:
+  - "8080:8001" # Access on port 8080 instead
+```
+
+**Environment variables:**
+
+All configuration is done via `.env` file in the project root:
+
+```env
+AUTH_USERNAME=myusername
+AUTH_PASSWORD=mypassword
+MUSIC_DIR=/music
+MUSIC_DIR_HOST=./music
+```
+
+### Troubleshooting
+
+**Container won't start:**
+
+```bash
+docker-compose logs
+```
+
+**Permission issues with music directory (Linux/Mac):**
+
+```bash
+sudo chown -R $(id -u):$(id -g) ./music
+# or
+chmod -R 777 ./music
+```
+
+**Permission issues (Windows):**
+
+```powershell
+# Run in PowerShell as Administrator
+icacls .\music /grant Everyone:F /T
+```
+
+**Music directory not found:**
+
+The container automatically creates `/music` inside. Make sure `MUSIC_DIR_HOST` in `.env` points to a valid location on your host machine.
+
+**Reset everything:**
+
+```bash
+docker-compose down -v
+docker-compose up -d --build
+```
+
+### Optional: Custom API Endpoints
+
+If you want to customize Tidal API endpoints, create `api_endpoints.json` in the project root:
+
+```json
+{
+  "endpoints": [
+    {
+      "name": "custom-endpoint",
+      "url": "https://your-endpoint.example.com",
+      "priority": 1
+    }
+  ]
+}
+```
+
+The application works fine without this file using built-in defaults.
 
 ### Windows Setup
 

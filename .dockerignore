@@ -1,0 +1,56 @@
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/env
+**/venv
+**/.venv
+**/pip-log.txt
+**/pip-delete-this-directory.txt
+**/.pytest_cache
+**/.coverage
+**/*.egg-info
+
+# Node
+**/node_modules
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.npm
+
+# IDE
+**/.vscode
+**/.idea
+**/*.swp
+**/*.swo
+**/*~
+
+# OS
+**/.DS_Store
+**/Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Environment
+**/.env
+!backend/.env.example
+
+# Downloads
+backend/downloads
+music
+
+# Logs
+**/*.log
+
+# Build artifacts
+frontend/dist
+frontend/build
+
+# Scripts (not needed in container)
+*.ps1
+*.sh
+!backend/termux-setup.sh
