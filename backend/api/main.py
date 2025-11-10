@@ -17,6 +17,7 @@ import json
 import aiohttp
 import os
 import unicodedata
+import platform
 from dotenv import load_dotenv
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover
@@ -237,29 +238,103 @@ def extract_stream_url(track_data) -> Optional[str]:
 
 async def transcode_to_mp3(source_path: Path, target_path: Path, bitrate_kbps: int):
     try:
-        process = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(source_path),
-            "-vn",
-            "-codec:a",
-            "libmp3lame",
-            "-b:a",
-            f"{bitrate_kbps}k",
-            str(target_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
+        if platform.system() == "Windows":
+            import subprocess
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(source_path),
+                    "-vn",
+                    "-codec:a",
+                    "libmp3lame",
+                    "-b:a",
+                    f"{bitrate_kbps}k",
+                    str(target_path),
+                ],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                error_output = result.stderr if result.stderr else "Unknown error"
+                raise Exception(f"FFmpeg failed: {error_output}")
+        else:
+            process = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(source_path),
+                "-vn",
+                "-codec:a",
+                "libmp3lame",
+                "-b:a",
+                f"{bitrate_kbps}k",
+                str(target_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
 
-        if process.returncode != 0:
-            error_output = stderr.decode() if stderr else "Unknown error"
-            raise Exception(f"FFmpeg failed: {error_output}")
+            if process.returncode != 0:
+                error_output = stderr.decode() if stderr else "Unknown error"
+                raise Exception(f"FFmpeg failed: {error_output}")
+                
     except FileNotFoundError:
         raise Exception("ffmpeg not found. Please install ffmpeg and ensure it is on the PATH.")
     except Exception as e:
         raise Exception(f"Failed to transcode to MP3: {e}")
+
+async def search_track_with_fallback(artist: str, title: str, track_obj) -> bool:
+    artist_fixed = fix_unicode(artist)
+    title_fixed = fix_unicode(title)
+    
+    log_info(f"Searching: {artist_fixed} - {title_fixed}")
+    
+    query = f"{artist_fixed} {title_fixed}"
+    result = tidal_client.search_tracks(query)
+    
+    if result:
+        tidal_tracks = extract_items(result, 'tracks')
+        if tidal_tracks and len(tidal_tracks) > 0:
+            first_track = tidal_tracks[0]
+            track_obj.tidal_id = first_track.get('id')
+            track_obj.tidal_exists = True
+            
+            album_data = first_track.get('album', {})
+            track_obj.album = album_data.get('title') if isinstance(album_data, dict) else None
+            
+            log_success(f"Found on Tidal - ID: {track_obj.tidal_id}")
+            return True
+    
+    romanized_title = romanize_japanese(title_fixed)
+    romanized_artist = romanize_japanese(artist_fixed)
+    
+    if romanized_title or romanized_artist:
+        search_artist = romanized_artist if romanized_artist else artist_fixed
+        search_title = romanized_title if romanized_title else title_fixed
+        
+        log_info(f"Trying romanized: {search_artist} - {search_title}")
+        
+        query_romanized = f"{search_artist} {search_title}"
+        result = tidal_client.search_tracks(query_romanized)
+        
+        if result:
+            tidal_tracks = extract_items(result, 'tracks')
+            if tidal_tracks and len(tidal_tracks) > 0:
+                first_track = tidal_tracks[0]
+                track_obj.tidal_id = first_track.get('id')
+                track_obj.tidal_exists = True
+                
+                album_data = first_track.get('album', {})
+                track_obj.album = album_data.get('title') if isinstance(album_data, dict) else None
+                
+                log_success(f"Found via romanization - ID: {track_obj.tidal_id}")
+                return True
+    
+    log_error("Not found on Tidal")
+    return False
 
 async def download_file_async(track_id: int, stream_url: str, filepath: Path, filename: str, metadata: dict = None):
     processed_path = filepath
@@ -499,7 +574,6 @@ async def write_m4a_metadata(filepath: Path, metadata: dict):
         log_warning(f"Failed to write M4A metadata: {e}")
         raise
 
-
 async def write_mp3_metadata(filepath: Path, metadata: dict):
     try:
         audio = MP3(str(filepath), ID3=ID3)
@@ -569,7 +643,6 @@ async def write_mp3_metadata(filepath: Path, metadata: dict):
     except Exception as e:
         log_warning(f"Failed to write MP3 metadata: {e}")
         raise
-
 
 async def fetch_and_store_lyrics(filepath: Path, metadata: dict, audio_file=None):
     if metadata.get('title') and metadata.get('artist'):
@@ -846,6 +919,7 @@ async def troi_progress_stream(
             "Content-Type": "text/event-stream; charset=utf-8"
         }
     )
+
 @app.get("/api/search/tracks")
 async def search_tracks(q: str, username: str = Depends(require_auth)):
     try:
@@ -1306,6 +1380,7 @@ async def download_track_server_side(
             metadata['target_format'] = 'mp3'
             metadata['bitrate_kbps'] = MP3_QUALITY_MAP[requested_quality]
             metadata['quality_label'] = requested_quality
+        
         if isinstance(track_info, list) and len(track_info) > 0:
             track_data = track_info[0]
         else:
