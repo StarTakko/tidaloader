@@ -20,6 +20,13 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user with configurable UID/GID
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+RUN groupadd -g ${USER_GID} appuser && \
+    useradd -m -u ${USER_UID} -g appuser appuser
+
 WORKDIR /app
 
 # Copy backend requirements
@@ -33,10 +40,14 @@ COPY automate-troi-download.py ./
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Create music directory with proper permissions
-RUN mkdir -p /music && chmod 777 /music
+# Create music directory and set ownership
+RUN mkdir -p /music && \
+    chown -R appuser:appuser /app /music
 
 WORKDIR /app/backend
+
+# Switch to non-root user
+USER appuser:appuser
 
 # Expose port
 EXPOSE 8001
