@@ -82,7 +82,7 @@ export function DownloadQueuePopout() {
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && window.innerWidth < 640) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";

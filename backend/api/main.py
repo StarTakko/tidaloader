@@ -149,7 +149,10 @@ class DownloadTrackRequest(BaseModel):
     track_id: int
     artist: str
     title: str
-    quality: str = "LOSSLESS"
+    quality: Optional[str] = "LOSSLESS"
+    organization_template: Optional[str] = "{Artist}/{Album}/{TrackNumber} - {Title}"
+    group_compilations: Optional[bool] = True
+    run_beets: Optional[bool] = False
 
 DOWNLOAD_DIR = Path(settings.music_dir)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -342,7 +345,16 @@ async def startup_event():
     tidal_client.cleanup_old_status_cache()
     download_state_manager._cleanup_old_entries()
 
-async def download_file_async(track_id: int, stream_url: str, filepath: Path, filename: str, metadata: dict = None):
+async def download_file_async(
+    track_id: int, 
+    stream_url: str, 
+    filepath: Path, 
+    filename: str, 
+    metadata: dict = None,
+    organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}",
+    group_compilations: bool = True,
+    run_beets: bool = False
+):
     processed_path = filepath
     try:
         log_step("3/4", f"Downloading {filename}...")
@@ -411,12 +423,20 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
             log_step("4/4", "Writing metadata tags...")
             await write_metadata_tags(processed_path, metadata)
         
-        final_path = await organize_file_by_metadata(processed_path, metadata)
+        # Organize file
+        log_step("4/4", "Organizing file...")
+        final_path = await organize_file_by_metadata(
+            processed_path, 
+            metadata,
+            template=organization_template,
+            group_compilations=group_compilations
+        )
         
-        active_downloads[track_id] = {
-            'progress': 100,
-            'status': 'completed'
-        }
+        # Run beets import if requested
+        if run_beets:
+            await run_beets_import(final_path)
+            
+        # Update state to completed
         download_state_manager.set_completed(track_id, final_path.name, metadata)
         
         file_size_mb = final_path.stat().st_size / 1024 / 1024
@@ -706,7 +726,54 @@ def sanitize_path_component(name: str) -> str:
     
     return name or "Unknown"
 
-async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path:
+
+
+
+async def run_beets_import(path: Path):
+    """Run beets import on the downloaded file/directory"""
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        # Determine beet executable path
+        beet_cmd = "beet"
+        
+        # Check if beet is in the same directory as python executable (common in venvs)
+        python_dir = os.path.dirname(sys.executable)
+        potential_beet = os.path.join(python_dir, "beet")
+        if os.path.exists(potential_beet):
+            beet_cmd = potential_beet
+        elif os.path.exists(potential_beet + ".exe"):
+            beet_cmd = potential_beet + ".exe"
+            
+        # Check if beet is installed/runnable
+        try:
+            subprocess.run([beet_cmd, "version"], check=True, capture_output=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            log_warning(f"Beets not found (tried '{beet_cmd}'). Skipping import.")
+            return
+
+        log_step("4/4", f"Running beets import on {path.name}...")
+        
+        # Run beet import in quiet mode
+        cmd = [beet_cmd, "import", "-q", str(path)]
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            log_success("Beets import completed successfully")
+        else:
+            log_warning(f"Beets import failed: {stderr.decode()}")
+            
+    except Exception as e:
+        log_warning(f"Failed to run beets import: {e}")
+
+async def organize_file_by_metadata(temp_filepath: Path, metadata: dict, template: str = "{Artist}/{Album}/{TrackNumber} - {Title}", group_compilations: bool = True) -> Path:
     try:
         artist = metadata.get('album_artist') or metadata.get('artist', 'Unknown Artist')
         album = metadata.get('album', 'Unknown Album')
@@ -717,17 +784,50 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path
             file_ext = temp_filepath.suffix or '.flac'
         file_ext = file_ext if file_ext.startswith('.') else f".{file_ext}"
         
-        artist_folder = sanitize_path_component(artist)
-        album_folder = sanitize_path_component(album)
+        # Sanitize components
+        s_artist = sanitize_path_component(artist)
+        s_album = sanitize_path_component(album)
+        s_title = sanitize_path_component(title)
         
-        if track_number:
-            track_str = str(track_number).zfill(2)
-            filename = f"{track_str} - {sanitize_path_component(title)}{file_ext}"
-        else:
-            filename = f"{sanitize_path_component(title)}{file_ext}"
+        # Handle compilations
+        is_compilation = artist.lower() in ['various artists', 'various'] or metadata.get('compilation')
         
-        final_dir = DOWNLOAD_DIR / artist_folder / album_folder
-        final_path = final_dir / filename
+        if group_compilations and is_compilation:
+            # Override artist folder for compilations if using default structure
+            # But if using custom template, we need to respect it.
+            # A common pattern for compilations is "Compilations/Album"
+            # We'll provide a {Artist} placeholder that resolves to "Compilations" if it's a compilation
+            # and the user wants to group them.
+            pass
+
+        # Prepare template variables
+        track_str = str(track_number).zfill(2) if track_number else "00"
+        
+        template_vars = {
+            "Artist": "Compilations" if (group_compilations and is_compilation) else s_artist,
+            "AlbumArtist": s_artist,
+            "TrackArtist": sanitize_path_component(metadata.get('artist', artist)),
+            "Album": s_album,
+            "Title": s_title,
+            "TrackNumber": track_str,
+            "Year": str(metadata.get('date', '')).split('-')[0] if metadata.get('date') else "Unknown Year"
+        }
+        
+        # Format path using template
+        try:
+            # Remove leading slash to avoid absolute paths
+            clean_template = template.lstrip('/')
+            relative_path_str = clean_template.format(**template_vars)
+        except KeyError as e:
+            log_warning(f"Invalid template key: {e}. Falling back to default.")
+            relative_path_str = f"{s_artist}/{s_album}/{track_str} - {s_title}"
+            
+        # Append extension
+        if not relative_path_str.endswith(file_ext):
+            relative_path_str += file_ext
+            
+        final_path = DOWNLOAD_DIR / relative_path_str
+        final_dir = final_path.parent
         
         final_dir.mkdir(parents=True, exist_ok=True)
         
@@ -746,7 +846,7 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path
         if temp_filepath != final_path:
             import shutil
             shutil.move(str(temp_filepath), str(final_path))
-            log_success(f"Organized to: {artist_folder}/{album_folder}/{filename}")
+            log_success(f"Organized to: {relative_path_str}")
             
             temp_lrc_path = temp_filepath.with_suffix('.lrc')
             if temp_lrc_path.exists():
@@ -1562,7 +1662,10 @@ async def download_track_server_side(
             stream_url,
             temp_filepath,
             final_filename,
-            metadata
+            metadata,
+            request.organization_template,
+            request.group_compilations,
+            request.run_beets
         )
         
         return {

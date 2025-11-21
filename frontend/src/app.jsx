@@ -6,7 +6,7 @@ import { Login } from "./components/Login";
 import { SearchBar } from "./components/SearchBar";
 import { TroiGenerator } from "./components/TroiGenerator";
 import { DownloadQueuePopout } from "./components/DownloadQueuePopout";
-import { QualitySelector } from "./components/QualitySelector";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { Toast } from "./components/Toast";
 
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -93,7 +93,7 @@ export function App() {
 
         {showSettings && (
           <div class="card p-6 mb-6 animate-slide-up">
-            <QualitySelector />
+            <SettingsPanel />
           </div>
         )}
 

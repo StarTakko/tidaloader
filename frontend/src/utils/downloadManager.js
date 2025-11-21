@@ -560,11 +560,16 @@ class DownloadManager {
 
       await this.sleep(500);
 
+      const { organizationTemplate, groupCompilations, runBeets } = useDownloadStore.getState();
+
       const requestBody = {
         track_id: Number(trackId),
         artist: String(track.artist || "Unknown Artist"),
         title: String(track.title || "Unknown Title"),
         quality: String(currentQuality),
+        organization_template: organizationTemplate,
+        group_compilations: groupCompilations,
+        run_beets: runBeets,
       };
 
       console.log("Starting download...");

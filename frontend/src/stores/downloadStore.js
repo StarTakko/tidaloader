@@ -10,6 +10,9 @@ export const useDownloadStore = create(
       failed: [],
       quality: "LOSSLESS",
       maxConcurrent: 3,
+      organizationTemplate: "{Artist}/{Album}/{TrackNumber} - {Title}",
+      groupCompilations: true,
+      runBeets: false,
 
       addToQueue: (tracks) =>
         set((state) => {
@@ -128,6 +131,9 @@ export const useDownloadStore = create(
       clearFailed: () => set({ failed: [] }),
 
       setQuality: (quality) => set({ quality }),
+      setOrganizationTemplate: (template) => set({ organizationTemplate: template }),
+      setGroupCompilations: (enabled) => set({ groupCompilations: enabled }),
+      setRunBeets: (enabled) => set({ runBeets: enabled }),
 
       getStats: () => {
         const state = get();
@@ -255,6 +261,9 @@ export const useDownloadStore = create(
         failed: state.failed,
         quality: state.quality,
         maxConcurrent: state.maxConcurrent,
+        organizationTemplate: state.organizationTemplate,
+        groupCompilations: state.groupCompilations,
+        runBeets: state.runBeets,
       }),
     }
   )
