@@ -914,22 +914,26 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict, templat
         # Handle compilations
         is_compilation = artist.lower() in ['various artists', 'various'] or metadata.get('compilation')
         
-        if group_compilations and is_compilation:
-            # Override artist folder for compilations if using default structure
-            # But if using custom template, we need to respect it.
-            # A common pattern for compilations is "Compilations/Album"
-            # We'll provide a {Artist} placeholder that resolves to "Compilations" if it's a compilation
-            # and the user wants to group them.
-            pass
-
         # Prepare template variables
         track_str = str(track_number).zfill(2) if track_number else "00"
         
+        # Determine Artist and Album values for template
+        template_artist = s_artist
+        template_album = s_album
+        
+        if group_compilations and is_compilation:
+            # User requested grouping for compilations
+            # We set the Artist part to "Compilations" to group them in a folder
+            # And we prefix the Album with "VA - " to make it clear and self-contained
+            template_artist = "Compilations"
+            if not template_album.startswith("VA - "):
+                template_album = f"VA - {template_album}"
+
         template_vars = {
-            "Artist": "Compilations" if (group_compilations and is_compilation) else s_artist,
+            "Artist": template_artist,
             "AlbumArtist": s_artist,
             "TrackArtist": sanitize_path_component(metadata.get('artist', artist)),
-            "Album": s_album,
+            "Album": template_album,
             "Title": s_title,
             "TrackNumber": track_str,
             "Year": str(metadata.get('date', '')).split('-')[0] if metadata.get('date') else "Unknown Year"
@@ -1740,6 +1744,13 @@ async def download_track_server_side(
                 if cover_id:
                     cover_id_str = str(cover_id).replace('-', '/')
                     metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
+                
+                # Check for compilation flag
+                # Tidal often doesn't explicitly flag compilations in the track info, 
+                # but we can infer it if the album artist is "Various Artists"
+                # or if the album type is "COMPILATION" (if available)
+                if album_data.get('type') == 'COMPILATION' or metadata.get('album_artist', '').lower() in ['various artists', 'various']:
+                    metadata['compilation'] = True
         
         log_success(f"Track metadata: {metadata.get('artist')} - {metadata.get('title')}")
         if metadata.get('album'):
