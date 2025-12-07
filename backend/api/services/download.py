@@ -10,6 +10,7 @@ from api.services.audio import transcode_to_mp3, transcode_to_opus, write_metada
 from api.services.files import organize_file_by_metadata
 from api.services.beets import run_beets_import
 from api.services.lyrics import embed_lyrics_with_ffmpeg
+from queue_manager import queue_manager
 
 async def download_file_async(
     track_id: int, 
@@ -46,6 +47,9 @@ async def download_file_async(
                 total_size = int(response.headers.get('content-length', 0))
                 downloaded = 0
                 
+                # Ensure the directory exists
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                
                 with open(filepath, 'wb') as f:
                     async for chunk in response.content.iter_chunked(8192):
                         if chunk:
@@ -59,7 +63,8 @@ async def download_file_async(
                                     'status': 'downloading'
                                 }
                                 download_state_manager.update_progress(track_id, progress)
-                                print(f"  Progress: {progress}%", end='\r')
+                                # Update queue manager for frontend sync
+                                queue_manager.update_active_progress(track_id, progress, 'downloading')
                             
                             await asyncio.sleep(0.01)
         

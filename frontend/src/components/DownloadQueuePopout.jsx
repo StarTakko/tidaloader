@@ -15,21 +15,29 @@ export function DownloadQueuePopout() {
   const downloading = useDownloadStore((state) => state.downloading);
   const completed = useDownloadStore((state) => state.completed);
   const failed = useDownloadStore((state) => state.failed);
-  const removeFromQueue = useDownloadStore((state) => state.removeFromQueue);
-  const retryFailed = useDownloadStore((state) => state.retryFailed);
-  const retryAllFailed = useDownloadStore((state) => state.retryAllFailed);
-  const clearCompleted = useDownloadStore((state) => state.clearCompleted);
-  const clearFailed = useDownloadStore((state) => state.clearFailed);
-  const clearQueue = useDownloadStore((state) => state.clearQueue);
+  const serverQueueSettings = useDownloadStore((state) => state.serverQueueSettings);
 
   const totalInQueue = queue.length + downloading.length;
   const totalActivity = totalInQueue + completed.length + failed.length;
   const currentDownload = downloading[0];
   const currentProgress = currentDownload?.progress || 0;
 
+  // Start/stop based on server settings
+  const isAutoProcess = serverQueueSettings?.auto_process ?? true;
+  const isServerProcessing = serverQueueSettings?.is_processing ?? false;
+
+  // Start periodic sync with server queue (1 second for smooth progress)
   useEffect(() => {
-    setIsRunning(downloading.length > 0 || downloadManager.isProcessing);
-  }, [downloading.length]);
+    downloadManager.startServerQueueSync(1000);
+    return () => {
+      downloadManager.stopServerQueueSync();
+    };
+  }, []);
+
+  useEffect(() => {
+    // isRunning reflects server processing state
+    setIsRunning(downloading.length > 0 || isServerProcessing);
+  }, [downloading.length, isServerProcessing]);
 
   const handleStart = async () => {
     setIsRunning(true);
@@ -335,7 +343,7 @@ export function DownloadQueuePopout() {
                       </h3>
                       <button
                         class="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors px-2 py-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                        onClick={clearQueue}
+                        onClick={() => downloadManager.clearQueue()}
                       >
                         Clear Queue
                       </button>
@@ -423,14 +431,14 @@ export function DownloadQueuePopout() {
                       </h3>
                       <button
                         class="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors px-2 py-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                        onClick={clearFailed}
+                        onClick={() => downloadManager.clearFailed()}
                       >
                         Clear All
                       </button>
                       {failed.length > 1 && (
                         <button
                           class="text-xs text-primary hover:text-primary-dark font-medium transition-colors px-2 py-1 hover:bg-primary/10 rounded flex items-center gap-1"
-                          onClick={retryAllFailed}
+                          onClick={() => downloadManager.retryAllFailed()}
                         >
                           <svg
                             class="w-3 h-3"
@@ -469,7 +477,7 @@ export function DownloadQueuePopout() {
                             </div>
                             <button
                               class="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-lg transition-colors duration-200 flex-shrink-0"
-                              onClick={() => retryFailed(track.id)}
+                              onClick={() => downloadManager.retryFailed(track.tidal_id)}
                               title="Retry download"
                             >
                               <svg
@@ -522,7 +530,7 @@ export function DownloadQueuePopout() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              clearCompleted();
+                              downloadManager.clearCompleted();
                             }}
                             class="text-xs text-text-muted hover:text-text font-medium px-2 py-1 hover:bg-primary/20 rounded transition-colors"
                           >

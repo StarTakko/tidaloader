@@ -14,8 +14,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from api.routers import system, troi, search, downloads
 from api.clients import tidal_client
-from api.utils.logging import log_warning
+from api.utils.logging import log_warning, log_info
 from download_state import download_state_manager
+from queue_manager import queue_manager, QUEUE_AUTO_PROCESS
 
 from contextlib import asynccontextmanager
 
@@ -24,8 +25,18 @@ async def lifespan(app: FastAPI):
     # Startup
     tidal_client.cleanup_old_status_cache()
     download_state_manager._cleanup_old_entries()
+    
+    # Initialize queue manager and start processing if auto mode is enabled
+    log_info(f"Queue manager initialized: auto_process={QUEUE_AUTO_PROCESS}")
+    if QUEUE_AUTO_PROCESS:
+        # Start queue processing in background
+        import asyncio
+        asyncio.create_task(queue_manager.start_processing())
+        log_info("Queue auto-processing started")
+    
     yield
-    # Shutdown (if needed)
+    # Shutdown
+    await queue_manager.stop_processing()
 
 app = FastAPI(title="Troi Tidal Downloader API", lifespan=lifespan)
 

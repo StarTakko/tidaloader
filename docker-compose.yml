@@ -12,6 +12,9 @@ services:
       - MUSIC_DIR=${MUSIC_DIR:-/music}
       - AUTH_USERNAME=${AUTH_USERNAME:-admin}
       - AUTH_PASSWORD=${AUTH_PASSWORD:-changeme}
+      # Queue configuration
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-3}
+      - QUEUE_AUTO_PROCESS=${QUEUE_AUTO_PROCESS:-true}
     volumes:
       - ${MUSIC_DIR_HOST:-./music}:/music
     restart: unless-stopped

@@ -15,6 +15,16 @@ export const useDownloadStore = create(
       runBeets: false,
       embedLyrics: false,
 
+      // Server queue settings (synced from backend)
+      serverQueueSettings: {
+        max_concurrent: 3,
+        auto_process: true,
+        is_processing: false,
+      },
+
+      // Flag to indicate if we're using server queue
+      useServerQueue: true,
+
       addToQueue: (tracks) =>
         set((state) => {
           const existingIds = new Set([
@@ -152,6 +162,27 @@ export const useDownloadStore = create(
       setGroupCompilations: (enabled) => set({ groupCompilations: enabled }),
       setRunBeets: (enabled) => set({ runBeets: enabled }),
       setEmbedLyrics: (enabled) => set({ embedLyrics: enabled }),
+
+      // Server queue state sync methods
+      setServerQueueState: ({ queue, downloading, completed, failed }) =>
+        set((state) => ({
+          queue: queue !== undefined ? queue : state.queue,
+          downloading: downloading !== undefined ? downloading : state.downloading,
+          completed: completed !== undefined ? completed : state.completed,
+          failed: failed !== undefined ? failed : state.failed,
+        })),
+
+      setQueueSettings: (settings) =>
+        set((state) => ({
+          serverQueueSettings: {
+            ...state.serverQueueSettings,
+            ...settings,
+          },
+          // Also update maxConcurrent for backwards compatibility
+          maxConcurrent: settings.max_concurrent || state.maxConcurrent,
+        })),
+
+      setUseServerQueue: (enabled) => set({ useServerQueue: enabled }),
 
       getStats: () => {
         const state = get();

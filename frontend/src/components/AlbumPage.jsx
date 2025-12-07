@@ -1,7 +1,7 @@
 import { h } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import { api } from "../api/client";
-import { useDownloadStore } from "../stores/downloadStore";
+import { downloadManager } from "../utils/downloadManager";
 import { useToastStore } from "../stores/toastStore";
 
 export function AlbumPage({ albumId, onBack }) {
@@ -11,7 +11,6 @@ export function AlbumPage({ albumId, onBack }) {
   const [selectedTracks, setSelectedTracks] = useState(new Set());
   const [error, setError] = useState(null);
 
-  const addToQueue = useDownloadStore((state) => state.addToQueue);
   const addToast = useToastStore((state) => state.addToast);
 
   useEffect(() => {
@@ -101,11 +100,12 @@ export function AlbumPage({ albumId, onBack }) {
         tidal_exists: true,
       }));
 
-    addToQueue(selectedTrackList);
-    addToast(
-      `Added ${selectedTrackList.length} tracks to download queue`,
-      "success"
-    );
+    downloadManager.addToServerQueue(selectedTrackList).then(result => {
+      addToast(
+        `Added ${result.added} tracks to download queue`,
+        "success"
+      );
+    });
   };
 
   if (loading && !album) {

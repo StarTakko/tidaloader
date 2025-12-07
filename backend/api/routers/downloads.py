@@ -1,7 +1,9 @@
 import re
 import asyncio
 import json
+import traceback
 from pathlib import Path
+from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -15,6 +17,7 @@ from api.utils.logging import log_info, log_error, log_warning, log_success, log
 from api.utils.extraction import extract_stream_url
 from api.services.files import sanitize_path_component
 from api.services.download import download_file_async
+from queue_manager import queue_manager, QueueItem, QUEUE_AUTO_PROCESS, MAX_CONCURRENT_DOWNLOADS
 
 router = APIRouter()
 
@@ -392,3 +395,311 @@ async def download_track_server_side(
             del active_downloads[request.track_id]
         
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# QUEUE API ENDPOINTS
+# ============================================================================
+
+class QueueAddRequest:
+    """Request model for adding tracks to queue"""
+    def __init__(self, tracks: List[dict]):
+        self.tracks = tracks
+
+from pydantic import BaseModel
+
+class QueueTrackItem(BaseModel):
+    track_id: int
+    title: str
+    artist: str
+    album: Optional[str] = ""
+    album_id: Optional[int] = None
+    track_number: Optional[int] = None
+    cover: Optional[str] = None
+    quality: str = "HIGH"
+    target_format: Optional[str] = None
+    bitrate_kbps: Optional[int] = None
+    run_beets: bool = False
+    embed_lyrics: bool = False
+    organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}"
+    group_compilations: bool = True
+
+
+class QueueAddRequestModel(BaseModel):
+    tracks: List[QueueTrackItem]
+
+
+@router.get("/api/queue")
+async def get_queue_state(username: str = Depends(require_auth)):
+    """Get current queue state including queue, active, completed, and failed items"""
+    return queue_manager.get_state()
+
+
+@router.post("/api/queue/add")
+async def add_to_queue(
+    request: QueueAddRequestModel,
+    username: str = Depends(require_auth)
+):
+    """Add tracks to the download queue"""
+    items = []
+    for track in request.tracks:
+        item = QueueItem(
+            track_id=track.track_id,
+            title=track.title,
+            artist=track.artist,
+            album=track.album or "",
+            album_id=track.album_id,
+            track_number=track.track_number,
+            cover=track.cover,
+            quality=track.quality,
+            target_format=track.target_format,
+            bitrate_kbps=track.bitrate_kbps,
+            run_beets=track.run_beets,
+            embed_lyrics=track.embed_lyrics,
+            organization_template=track.organization_template,
+            group_compilations=track.group_compilations,
+            added_by=username
+        )
+        items.append(item)
+    
+    if len(items) == 1:
+        success = await queue_manager.add_to_queue(items[0])
+        return {"added": 1 if success else 0, "skipped": 0 if success else 1}
+    else:
+        result = await queue_manager.add_many_to_queue(items)
+        return result
+
+
+@router.delete("/api/queue/{track_id}")
+async def remove_from_queue(
+    track_id: int,
+    username: str = Depends(require_auth)
+):
+    """Remove a track from the queue"""
+    success = await queue_manager.remove_from_queue(track_id)
+    return {"success": success}
+
+
+@router.post("/api/queue/clear")
+async def clear_queue(username: str = Depends(require_auth)):
+    """Clear all queued items (not active downloads)"""
+    count = await queue_manager.clear_queue()
+    return {"cleared": count}
+
+
+@router.post("/api/queue/clear-completed")
+async def clear_completed(username: str = Depends(require_auth)):
+    """Clear all completed items"""
+    count = await queue_manager.clear_completed()
+    return {"cleared": count}
+
+
+@router.post("/api/queue/clear-failed")
+async def clear_failed(username: str = Depends(require_auth)):
+    """Clear all failed items"""
+    count = await queue_manager.clear_failed()
+    return {"cleared": count}
+
+
+@router.post("/api/queue/retry-failed")
+async def retry_all_failed(username: str = Depends(require_auth)):
+    """Retry all failed downloads"""
+    count = await queue_manager.retry_failed()
+    return {"retried": count}
+
+
+@router.post("/api/queue/retry/{track_id}")
+async def retry_single_failed(
+    track_id: int,
+    username: str = Depends(require_auth)
+):
+    """Retry a single failed download"""
+    success = await queue_manager.retry_single(track_id)
+    return {"success": success}
+
+
+@router.post("/api/queue/start")
+async def start_queue_processing(username: str = Depends(require_auth)):
+    """Manually start queue processing (for non-auto mode)"""
+    if QUEUE_AUTO_PROCESS:
+        return {"message": "Auto-processing is enabled, queue processes automatically"}
+    
+    asyncio.create_task(queue_manager.start_processing())
+    return {"status": "started"}
+
+
+@router.post("/api/queue/stop")
+async def stop_queue_processing(username: str = Depends(require_auth)):
+    """Stop queue processing (won't cancel active downloads)"""
+    await queue_manager.stop_processing()
+    return {"status": "stopped"}
+
+
+@router.get("/api/queue/settings")
+async def get_queue_settings(username: str = Depends(require_auth)):
+    """Get queue settings"""
+    return {
+        "max_concurrent": MAX_CONCURRENT_DOWNLOADS,
+        "auto_process": QUEUE_AUTO_PROCESS
+    }
+
+
+# ============================================================================
+# QUEUE ITEM PROCESSOR
+# ============================================================================
+
+async def process_queue_item(item: QueueItem):
+    """
+    Process a single queue item by downloading the track.
+    Called by the queue manager's background processing loop.
+    """
+    try:
+        track_id = item.track_id
+        requested_quality = item.quality.upper() if item.quality else "LOSSLESS"
+        
+        log_step("1/4", f"[Queue] Processing: {item.artist} - {item.title}")
+        
+        # Mark as starting
+        queue_manager.update_active_progress(track_id, 0, 'starting')
+        active_downloads[track_id] = {'progress': 0, 'status': 'starting'}
+        
+        is_mp3_request = requested_quality in MP3_QUALITY_MAP
+        is_opus_request = requested_quality in OPUS_QUALITY_MAP
+        source_quality = 'LOSSLESS' if is_mp3_request or is_opus_request else requested_quality
+        
+        # Get track info from API
+        track_info = tidal_client.get_track(track_id, source_quality)
+        if not track_info:
+            raise Exception("Track not found")
+        
+        # Build metadata
+        metadata = {
+            'quality': requested_quality,
+            'source_quality': source_quality
+        }
+        
+        if is_mp3_request:
+            metadata['target_format'] = 'mp3'
+            metadata['bitrate_kbps'] = MP3_QUALITY_MAP[requested_quality]
+        elif is_opus_request:
+            metadata['target_format'] = 'opus'
+            metadata['bitrate_kbps'] = OPUS_QUALITY_MAP[requested_quality]
+        
+        if isinstance(track_info, list) and len(track_info) > 0:
+            track_data = track_info[0]
+        else:
+            track_data = track_info
+        
+        if isinstance(track_data, dict):
+            metadata['title'] = track_data.get('title') or item.title
+            metadata['track_number'] = track_data.get('trackNumber') or item.track_number
+            metadata['disc_number'] = track_data.get('volumeNumber')
+            metadata['date'] = track_data.get('streamStartDate', '').split('T')[0] if track_data.get('streamStartDate') else None
+            metadata['duration'] = track_data.get('duration')
+            
+            artist_data = track_data.get('artist', {})
+            if isinstance(artist_data, dict) and artist_data.get('name'):
+                metadata['artist'] = artist_data.get('name')
+            else:
+                metadata['artist'] = item.artist
+            
+            album_data = track_data.get('album', {})
+            if isinstance(album_data, dict) and album_data.get('title'):
+                metadata['album'] = album_data.get('title')
+                metadata['album_artist'] = album_data.get('artist', {}).get('name') if isinstance(album_data.get('artist'), dict) else None
+                metadata['total_tracks'] = album_data.get('numberOfTracks')
+                metadata['total_discs'] = album_data.get('numberOfVolumes')
+                
+                cover_id = album_data.get('cover')
+                if cover_id:
+                    cover_id_str = str(cover_id).replace('-', '/')
+                    metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
+                    
+                album_artist = metadata.get('album_artist') or ''
+                if album_data.get('type') == 'COMPILATION' or (album_artist and album_artist.lower() in ['various artists', 'various']):
+                    metadata['compilation'] = True
+            else:
+                metadata['album'] = item.album
+                if item.cover:
+                    cover_id_str = str(item.cover).replace('-', '/')
+                    metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
+        else:
+            metadata['title'] = item.title
+            metadata['artist'] = item.artist
+            metadata['album'] = item.album
+            metadata['track_number'] = item.track_number
+            if item.cover:
+                cover_id_str = str(item.cover).replace('-', '/')
+                metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
+        
+        # Get stream URL
+        stream_url = extract_stream_url(track_info)
+        if not stream_url:
+            raise Exception("Stream URL not found")
+        
+        # Prepare file paths
+        download_ext = '.m4a' if source_quality in ['LOW', 'HIGH'] else '.flac'
+        if is_mp3_request:
+            final_ext = '.mp3'
+        elif is_opus_request:
+            final_ext = '.opus'
+        else:
+            final_ext = download_ext
+        metadata['file_ext'] = final_ext
+        metadata['download_ext'] = download_ext
+        
+        temp_download_name = f"{item.artist} - {item.title}{download_ext}"
+        temp_download_name = re.sub(r'[<>:"/\\|?*]', '_', temp_download_name)
+        temp_filepath = DOWNLOAD_DIR / temp_download_name
+        
+        artist = metadata.get('album_artist') or metadata.get('artist', 'Unknown Artist')
+        album = metadata.get('album', 'Unknown Album')
+        title = metadata.get('title', item.title)
+        track_number = metadata.get('track_number')
+        
+        artist_folder = sanitize_path_component(artist)
+        album_folder = sanitize_path_component(album)
+        
+        if track_number:
+            track_str = str(track_number).zfill(2)
+            final_filename = f"{track_str} - {sanitize_path_component(title)}{final_ext}"
+        else:
+            final_filename = f"{sanitize_path_component(title)}{final_ext}"
+        
+        final_filepath = DOWNLOAD_DIR / artist_folder / album_folder / final_filename
+        
+        # Check if file already exists
+        if final_filepath.exists():
+            log_warning(f"[Queue] File exists: {final_filename}")
+            queue_manager.mark_completed(track_id, final_filename, metadata)
+            if track_id in active_downloads:
+                del active_downloads[track_id]
+            return
+        
+        # Update status and start download
+        queue_manager.update_active_progress(track_id, 0, 'downloading')
+        active_downloads[track_id] = {'progress': 0, 'status': 'downloading'}
+        
+        # Call the existing download function
+        await download_file_async(
+            track_id,
+            stream_url,
+            temp_filepath,
+            final_filename,
+            metadata,
+            item.organization_template,
+            item.group_compilations,
+            item.run_beets,
+            item.embed_lyrics
+        )
+        
+        # Mark as completed in queue manager
+        queue_manager.mark_completed(track_id, final_filename, metadata)
+        
+    except Exception as e:
+        log_error(f"[Queue] Failed to process {item.track_id}: {e}")
+        traceback.print_exc()
+        queue_manager.mark_failed(item.track_id, str(e))
+        
+        if item.track_id in active_downloads:
+            del active_downloads[item.track_id]

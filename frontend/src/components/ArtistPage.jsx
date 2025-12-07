@@ -1,7 +1,7 @@
 import { h } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import { api } from "../api/client";
-import { useDownloadStore } from "../stores/downloadStore";
+import { downloadManager } from "../utils/downloadManager";
 import { useToastStore } from "../stores/toastStore";
 
 export function ArtistPage({ artistId, onBack }) {
@@ -13,7 +13,6 @@ export function ArtistPage({ artistId, onBack }) {
   const [selectedAlbums, setSelectedAlbums] = useState(new Set());
   const [error, setError] = useState(null);
 
-  const addToQueue = useDownloadStore((state) => state.addToQueue);
   const addToast = useToastStore((state) => state.addToast);
 
   useEffect(() => {
@@ -37,8 +36,7 @@ export function ArtistPage({ artistId, onBack }) {
       }
 
       console.log(
-        `Loaded: ${result.tracks?.length || 0} tracks, ${
-          result.albums?.length || 0
+        `Loaded: ${result.tracks?.length || 0} tracks, ${result.albums?.length || 0
         } albums`
       );
     } catch (err) {
@@ -97,8 +95,9 @@ export function ArtistPage({ artistId, onBack }) {
         tidal_exists: true,
       }));
 
-    addToQueue(tracks);
-    addToast(`Added ${tracks.length} tracks to download queue`, "success");
+    downloadManager.addToServerQueue(tracks).then(result => {
+      addToast(`Added ${result.added} tracks to download queue`, "success");
+    });
   };
 
   const handleDownloadAlbums = async () => {
@@ -125,8 +124,8 @@ export function ArtistPage({ artistId, onBack }) {
           tidal_exists: true,
         }));
 
-        addToQueue(tracks);
-        totalTracks += tracks.length;
+        const res = await downloadManager.addToServerQueue(tracks);
+        totalTracks += res.added;
       }
 
       addToast(
@@ -168,8 +167,8 @@ export function ArtistPage({ artistId, onBack }) {
           tidal_exists: true,
         }));
 
-        addToQueue(tracks);
-        totalTracks += tracks.length;
+        const res = await downloadManager.addToServerQueue(tracks);
+        totalTracks += res.added;
 
         await new Promise((resolve) => setTimeout(resolve, 200));
       }

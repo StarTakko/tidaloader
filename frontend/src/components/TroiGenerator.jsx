@@ -1,7 +1,7 @@
 import { h } from "preact";
 import { useState, useRef, useEffect } from "preact/hooks";
 import { api } from "../api/client";
-import { useDownloadStore } from "../stores/downloadStore";
+import { downloadManager } from "../utils/downloadManager";
 import { useToastStore } from "../stores/toastStore";
 
 export function TroiGenerator() {
@@ -15,7 +15,6 @@ export function TroiGenerator() {
   const [validationTotal, setValidationTotal] = useState(0);
   const logsEndRef = useRef(null);
 
-  const addToQueue = useDownloadStore((state) => state.addToQueue);
   const addToast = useToastStore((state) => state.addToast);
 
   useEffect(() => {
@@ -123,11 +122,12 @@ export function TroiGenerator() {
 
   const handleDownload = () => {
     const selectedTracks = tracks.filter((t) => selected.has(t.tidal_id));
-    addToQueue(selectedTracks);
-    addToast(
-      `Added ${selectedTracks.length} tracks to download queue`,
-      "success"
-    );
+    downloadManager.addToServerQueue(selectedTracks).then(result => {
+      addToast(
+        `Added ${result.added} tracks to download queue`,
+        "success"
+      );
+    });
   };
 
   const progressPercentage =
@@ -216,15 +216,14 @@ export function TroiGenerator() {
             {progressLogs.map((log, idx) => (
               <div
                 key={idx}
-                class={`flex items-start gap-2 ${
-                  log.type === "error"
+                class={`flex items-start gap-2 ${log.type === "error"
                     ? "text-red-600"
                     : log.type === "success"
-                    ? "text-green-600"
-                    : log.type === "validating"
-                    ? "text-blue-600"
-                    : "text-text-muted"
-                }`}
+                      ? "text-green-600"
+                      : log.type === "validating"
+                        ? "text-blue-600"
+                        : "text-text-muted"
+                  }`}
               >
                 <span class="flex-shrink-0">
                   {log.type === "error" && "❌"}
@@ -280,13 +279,12 @@ export function TroiGenerator() {
             {tracks.map((track, idx) => (
               <label
                 key={idx}
-                class={`search-result-card ${
-                  track.tidal_exists
+                class={`search-result-card ${track.tidal_exists
                     ? selected.has(track.tidal_id)
                       ? "selected"
                       : ""
                     : "opacity-60 cursor-not-allowed"
-                }`}
+                  }`}
               >
                 <input
                   type="checkbox"

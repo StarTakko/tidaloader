@@ -1,20 +1,31 @@
+/**
+ * Download Manager - Server Queue Integration
+ * 
+ * This module manages the connection between the frontend and the server's
+ * download queue. All download processing happens server-side.
+ * 
+ * Responsibilities:
+ * - Sync queue state from server periodically
+ * - Add tracks to server queue
+ * - Control server queue (start/stop for manual mode)
+ * - Provide queue operations (clear, retry, remove)
+ */
+
 import { api } from "../api/client";
 import { useDownloadStore } from "../stores/downloadStore";
 import { useToastStore } from "../stores/toastStore";
-import { useAuthStore } from "../store/authStore";
-
-const DOWNLOAD_MODE = "server";
-const API_BASE = "/api";
 
 class DownloadManager {
   constructor() {
-    this.isProcessing = false;
-    this.activeDownloads = new Map();
-    this.progressStreams = new Map();
     this.initialized = false;
-    this.stateCheckInterval = null;
+    this.syncInterval = null;
+    this.syncIntervalMs = 1000; // 1 second for smooth progress updates
   }
 
+  /**
+   * Initialize the download manager
+   * Starts periodic sync with server queue
+   */
   async initialize() {
     if (this.initialized) {
       console.log("Download manager already initialized");
@@ -24,810 +35,287 @@ class DownloadManager {
     console.log("🔄 Initializing download manager...");
     this.initialized = true;
 
-    // First, sync with backend to get actual download states
-    console.log("📡 Syncing with backend state...");
-    await this.syncWithBackend();
+    // Start periodic sync with server queue
+    this.startSync();
 
-    const { downloading, queue } = useDownloadStore.getState();
+    // Get initial queue state
+    await this.syncQueueState();
 
-    // Reconnect to downloads that are still active after reconciliation
-    for (const track of downloading) {
-      console.log(`Reconnecting to download: ${track.artist} - ${track.title}`);
-      this.reconnectProgressStream(track);
+    console.log("✅ Download manager initialized - server handles queue processing");
+  }
+
+  /**
+   * Start periodic sync with server
+   */
+  startSync() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
     }
 
-    // Start periodic state check
-    this.startPeriodicStateCheck();
+    // Sync immediately
+    this.syncQueueState();
 
-    // Auto-start if there are queued or downloading items
-    if (downloading.length > 0 || queue.length > 0) {
-      console.log("Auto-starting download manager...");
-      setTimeout(() => this.start(), 1000);
+    // Then sync periodically
+    this.syncInterval = setInterval(() => {
+      this.syncQueueState();
+    }, this.syncIntervalMs);
+
+    console.log(`🔄 Server queue sync started (every ${this.syncIntervalMs}ms)`);
+  }
+
+  /**
+   * Stop periodic sync
+   */
+  stopSync() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+      console.log("🛑 Server queue sync stopped");
     }
   }
 
-  reconnectProgressStream(track) {
-    const trackId = track.tidal_id || track.id;
-
-    if (this.progressStreams.has(trackId)) {
-      console.log(`Progress stream already exists for track ${trackId}`);
-      return;
-    }
-
-    console.log(`Creating progress stream for track ${trackId}`);
-
-    const authHeader = useAuthStore.getState().getAuthHeader();
-    const headers = {};
-    if (authHeader) {
-      headers["Authorization"] = authHeader;
-    }
-
-    const sseUrl = `${API_BASE}/download/progress/${trackId}`;
-
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 10; // Increased from 5
-    const reconnectDelay = 2000;
-
-    const createAuthenticatedSSE = async () => {
-      try {
-        const response = await fetch(sseUrl, {
-          headers: headers,
-          credentials: "include",
-        });
-
-        if (response.status === 401) {
-          useAuthStore.getState().clearCredentials();
-          console.error("Authentication required");
-          return null;
-        }
-
-        if (!response.ok) {
-          if (reconnectAttempts < maxReconnectAttempts) {
-            reconnectAttempts++;
-            console.log(
-              `Reconnecting progress stream for track ${trackId} (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`
-            );
-            setTimeout(() => createAuthenticatedSSE(), reconnectDelay);
-          } else {
-            console.error(
-              `Failed to reconnect progress stream for track ${trackId} after ${maxReconnectAttempts} attempts`
-            );
-            this.progressStreams.delete(trackId);
-
-            // Move to failed if max attempts reached
-            const state = useDownloadStore.getState();
-            const downloadingTrack = state.downloading.find(
-              (t) => t.tidal_id === trackId || t.id === track.id
-            );
-            if (downloadingTrack) {
-              state.failDownload(
-                downloadingTrack.id,
-                "Failed to connect to download progress"
-              );
-            }
-          }
-          return null;
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        this.progressStreams.set(trackId, {
-          cancel: () => reader.cancel(),
-          reader: reader,
-        });
-
-        reconnectAttempts = 0; // Reset on successful connection
-
-        const readStream = async () => {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) {
-                console.log(`Stream ended for track ${trackId}`);
-                this.progressStreams.delete(trackId);
-                break;
-              }
-
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split("\n");
-
-              for (const line of lines) {
-                if (line.startsWith("data: ")) {
-                  const data = JSON.parse(line.substring(6));
-
-                  if (data.progress !== undefined) {
-                    useDownloadStore
-                      .getState()
-                      .updateProgress(track.id, data.progress);
-
-                    if (data.status === "completed" || data.progress >= 100) {
-                      console.log(`Download completed for track ${trackId}`);
-                      useDownloadStore
-                        .getState()
-                        .completeDownload(track.id, track.title);
-                      this.progressStreams.delete(trackId);
-                      return;
-                    }
-                  }
-
-                  if (data.status === "not_found") {
-                    console.warn(
-                      `Download not found for track ${trackId}, removing from downloading`
-                    );
-                    const state = useDownloadStore.getState();
-                    const downloadingTrack = state.downloading.find(
-                      (t) => t.tidal_id === trackId || t.id === track.id
-                    );
-                    if (downloadingTrack) {
-                      state.failDownload(
-                        downloadingTrack.id,
-                        "Download not found on server"
-                      );
-                    }
-                    this.progressStreams.delete(trackId);
-                    return;
-                  }
-
-                  if (data.status === "failed") {
-                    console.error(`Download failed for track ${trackId}`);
-                    useDownloadStore
-                      .getState()
-                      .failDownload(track.id, data.error || "Download failed");
-                    this.progressStreams.delete(trackId);
-                    return;
-                  }
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`Stream read error for track ${trackId}:`, error);
-            this.progressStreams.delete(trackId);
-
-            if (reconnectAttempts < maxReconnectAttempts) {
-              reconnectAttempts++;
-              console.log(
-                `Reconnecting progress stream (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`
-              );
-              setTimeout(() => createAuthenticatedSSE(), reconnectDelay);
-            }
-          }
-        };
-
-        readStream();
-      } catch (error) {
-        console.error(
-          `Failed to create progress stream for track ${trackId}:`,
-          error
-        );
-        this.progressStreams.delete(trackId);
-
-        if (reconnectAttempts < maxReconnectAttempts) {
-          reconnectAttempts++;
-          console.log(
-            `Reconnecting progress stream (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`
-          );
-          setTimeout(() => createAuthenticatedSSE(), reconnectDelay);
-        }
-      }
-    };
-
-    createAuthenticatedSSE();
-  }
-
-  async fetchBackendState() {
+  /**
+   * Sync queue state from server to local store
+   */
+  async syncQueueState() {
     try {
-      const authHeader = useAuthStore.getState().getAuthHeader();
-      const headers = {};
-      if (authHeader) {
-        headers["Authorization"] = authHeader;
+      const serverState = await api.getQueue();
+      if (!serverState) return;
+
+      const store = useDownloadStore.getState();
+
+      // Transform server state to store format
+      const queue = (serverState.queue || []).map(item => ({
+        id: `q-${item.track_id}`,
+        tidal_id: item.track_id,
+        title: item.title || "Unknown Title",
+        artist: item.artist || "Unknown Artist",
+        album: item.album || "",
+        track_number: item.track_number,
+        cover: item.cover,
+        progress: 0,
+      }));
+
+      const downloading = (serverState.active || []).map(item => ({
+        id: `d-${item.track_id}`,
+        tidal_id: item.track_id,
+        title: item.title || "Unknown Title",
+        artist: item.artist || "Unknown Artist",
+        album: item.album || "",
+        progress: item.progress || 0,
+      }));
+
+      const completed = (serverState.completed || []).map(item => ({
+        id: `c-${item.track_id}`,
+        tidal_id: item.track_id,
+        title: item.title || "Unknown Title",
+        artist: item.artist || "Unknown Artist",
+        filename: item.filename,
+      }));
+
+      const failed = (serverState.failed || []).map(item => ({
+        id: `f-${item.track_id}`,
+        tidal_id: item.track_id,
+        title: item.title || "Unknown Title",
+        artist: item.artist || "Unknown Artist",
+        error: item.error,
+      }));
+
+      // Update store with server state
+      store.setServerQueueState({ queue, downloading, completed, failed });
+
+      // Update settings from server
+      if (serverState.settings) {
+        store.setQueueSettings(serverState.settings);
       }
-
-      const response = await fetch(`${API_BASE}/download/state`, {
-        headers: headers,
-        credentials: "include",
-      });
-
-      if (response.status === 401) {
-        useAuthStore.getState().clearCredentials();
-        console.error("Authentication required for state fetch");
-        return null;
-      }
-
-      if (!response.ok) {
-        console.error(`Failed to fetch backend state: ${response.status}`);
-        return null;
-      }
-
-      const state = await response.json();
-      console.log("Backend state:", {
-        active: Object.keys(state.active || {}).length,
-        completed: Object.keys(state.completed || {}).length,
-        failed: Object.keys(state.failed || {}).length,
-      });
-      return state;
     } catch (error) {
-      console.error("Error fetching backend state:", error);
-      return null;
+      // Silently fail - connection issues shouldn't spam errors
+      console.debug("Queue sync failed:", error.message);
     }
   }
 
-  async syncWithBackend() {
-    const backendState = await this.fetchBackendState();
-    if (!backendState) {
-      console.warn("Could not sync with backend - state unavailable");
-      return;
-    }
-
-    const { downloading } = useDownloadStore.getState();
-
-    if (downloading.length === 0) {
-      console.log("No downloads to reconcile");
-      return;
-    }
-
-    console.log(`🔄 Reconciling ${downloading.length} downloads with backend...`);
-
-    // Use bulk reconciliation for efficiency
-    useDownloadStore.getState().bulkReconcileWithBackend(backendState);
-
-    const afterSync = useDownloadStore.getState();
-    console.log("✅ Reconciliation complete:", {
-      stillDownloading: afterSync.downloading.length,
-      completed: afterSync.completed.length,
-      failed: afterSync.failed.length,
-    });
-  }
-
-  startPeriodicStateCheck() {
-    // Clear any existing interval
-    if (this.stateCheckInterval) {
-      clearInterval(this.stateCheckInterval);
-    }
-
-    // Check every 10 seconds as a fallback
-    this.stateCheckInterval = setInterval(async () => {
-      const { downloading } = useDownloadStore.getState();
-      if (downloading.length > 0) {
-        console.log("🔄 Periodic state check...");
-        await this.syncWithBackend();
-      }
-    }, 10000);
-
-    console.log("⏱️ Periodic state check started (every 10s)");
-  }
-
-  stopPeriodicStateCheck() {
-    if (this.stateCheckInterval) {
-      clearInterval(this.stateCheckInterval);
-      this.stateCheckInterval = null;
-      console.log("⏱️ Periodic state check stopped");
-    }
-  }
-
-  async start() {
-    if (this.isProcessing) {
-      console.log("Download manager already running");
-      return;
-    }
-
-    this.isProcessing = true;
-    console.log("🎵 Download manager started");
-
-    // Ensure we're initialized
-    if (!this.initialized) {
-      await this.initialize();
-    }
-
-    while (this.isProcessing) {
-      const state = useDownloadStore.getState();
-      const { queue, downloading, maxConcurrent } = state;
-
-      if (downloading.length < maxConcurrent && queue.length > 0) {
-        const track = queue[0];
-        await this.downloadTrack(track);
-      } else if (downloading.length === 0 && queue.length === 0) {
-        // No more work to do
-        console.log("Queue empty, stopping download manager");
-        this.isProcessing = false;
-        break;
-      } else {
-        await this.sleep(500);
-      }
-    }
-
-    console.log("🛑 Download manager stopped");
-  }
-
-  stop() {
-    console.log("Stopping download manager...");
-    this.isProcessing = false;
-    this.activeDownloads.forEach((controller) => {
-      if (controller.abort) {
-        controller.abort();
-      }
-    });
-    this.activeDownloads.clear();
-
-    // Don't stop periodic state check - keep monitoring in background
-    // Don't clear progress streams - let them continue
-    // this.progressStreams.forEach((stream) => {
-    //   if (stream.cancel) {
-    //     stream.cancel();
-    //   }
-    // });
-    // this.progressStreams.clear();
-  }
-
-  async downloadTrack(track) {
-    if (DOWNLOAD_MODE === "server") {
-      return this.downloadTrackServerSide(track);
-    } else {
-      return this.downloadTrackClientSide(track);
-    }
-  }
-
-  async downloadTrackServerSide(track) {
-    const {
-      startDownload,
-      completeDownload,
-      failDownload,
-      updateProgress,
-      quality,
-    } = useDownloadStore.getState();
-
-    const addToast = useToastStore.getState().addToast;
-
-    startDownload(track.id);
-
-    const trackId = track.tidal_id || track.id;
-    if (!trackId) {
-      failDownload(track.id, "Track ID is missing");
-      return;
-    }
-
-    let streamReader = null;
-    let downloadCompleted = false;
-    let currentQuality = quality;
-
-    const setupProgressMonitoring = () => {
-      return new Promise((resolve, reject) => {
-        if (streamReader) {
-          streamReader.cancel();
-          streamReader = null;
-        }
-
-        const authHeader = useAuthStore.getState().getAuthHeader();
-        const headers = {};
-        if (authHeader) {
-          headers["Authorization"] = authHeader;
-        }
-
-        const sseUrl = `${API_BASE}/download/progress/${trackId}`;
-
-        let reconnectAttempts = 0;
-        const maxReconnectAttempts = 5;
-        const reconnectDelay = 2000;
-
-        const createAuthenticatedSSE = async () => {
-          try {
-            const response = await fetch(sseUrl, {
-              headers: headers,
-              credentials: "include",
-            });
-
-            if (response.status === 401) {
-              useAuthStore.getState().clearCredentials();
-              reject(new Error("Authentication required"));
-              return null;
-            }
-
-            if (!response.ok) {
-              if (
-                reconnectAttempts < maxReconnectAttempts &&
-                !downloadCompleted
-              ) {
-                reconnectAttempts++;
-                console.log(
-                  `Reconnecting (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`
-                );
-                setTimeout(() => createAuthenticatedSSE(), reconnectDelay);
-              } else {
-                reject(new Error(`HTTP ${response.status}`));
-              }
-              return null;
-            }
-
-            const reader = response.body.getReader();
-            streamReader = reader;
-            const decoder = new TextDecoder();
-
-            reconnectAttempts = 0;
-
-            const readStream = async () => {
-              try {
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) {
-                    if (!downloadCompleted) {
-                      console.log("Stream ended, attempting reconnect...");
-                      if (reconnectAttempts < maxReconnectAttempts) {
-                        reconnectAttempts++;
-                        setTimeout(
-                          () => createAuthenticatedSSE(),
-                          reconnectDelay
-                        );
-                      }
-                    }
-                    break;
-                  }
-
-                  const chunk = decoder.decode(value, { stream: true });
-                  const lines = chunk.split("\n");
-
-                  for (const line of lines) {
-                    if (line.startsWith("data: ")) {
-                      const data = JSON.parse(line.substring(6));
-
-                      if (data.progress !== undefined) {
-                        updateProgress(track.id, data.progress);
-                        console.log(
-                          `  Progress: ${data.progress}% (${data.status || "downloading"
-                          })`
-                        );
-
-                        if (
-                          data.status === "completed" ||
-                          data.progress >= 100
-                        ) {
-                          downloadCompleted = true;
-                          console.log("  Download completed!");
-                          resolve();
-                          return;
-                        }
-                      }
-
-                      if (data.status === "not_found") {
-                        console.error("  Download progress not found");
-                        reject(new Error("Download progress not found"));
-                        return;
-                      }
-
-                      if (data.status === "failed") {
-                        console.error("  Download failed on server");
-                        reject(
-                          new Error(data.error || "Download failed on server")
-                        );
-                        return;
-                      }
-                    }
-                  }
-                }
-              } catch (error) {
-                if (!downloadCompleted) {
-                  console.error("Stream read error:", error);
-                  if (reconnectAttempts < maxReconnectAttempts) {
-                    reconnectAttempts++;
-                    console.log(
-                      `Reconnecting (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`
-                    );
-                    setTimeout(() => createAuthenticatedSSE(), reconnectDelay);
-                  } else {
-                    reject(error);
-                  }
-                }
-              }
-            };
-
-            readStream();
-
-            setTimeout(() => {
-              if (!downloadCompleted) {
-                console.error("  Download timeout (5 minutes)");
-                reader.cancel();
-                reject(new Error("Download timeout (5 minutes)"));
-              }
-            }, 300000);
-
-            return { cancel: () => reader.cancel() };
-          } catch (error) {
-            if (
-              !downloadCompleted &&
-              reconnectAttempts < maxReconnectAttempts
-            ) {
-              reconnectAttempts++;
-              console.log(
-                `Reconnecting (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`
-              );
-              setTimeout(() => createAuthenticatedSSE(), reconnectDelay);
-            } else {
-              reject(error);
-            }
-            return null;
-          }
-        };
-
-        createAuthenticatedSSE();
-      });
-    };
-
+  /**
+   * Add tracks to the server queue
+   * @param {Array} tracks - Array of track objects with tidal_id, title, artist, etc.
+   */
+  async addToServerQueue(tracks) {
     try {
-      console.log(`⬇️ Downloading (server): ${track.artist} - ${track.title}`);
-      console.log(`  Track ID: ${trackId}`);
-      console.log(`  Quality: ${currentQuality}`);
+      const { quality, organizationTemplate, groupCompilations, runBeets, embedLyrics } =
+        useDownloadStore.getState();
 
-      const downloadCompletionPromise = setupProgressMonitoring();
-
-      await this.sleep(500);
-
-      const { organizationTemplate, groupCompilations, runBeets, embedLyrics } = useDownloadStore.getState();
-
-      const requestBody = {
-        track_id: Number(trackId),
-        artist: String(track.artist || "Unknown Artist"),
+      // Transform tracks to API format
+      const formattedTracks = tracks.map(track => ({
+        track_id: Number(track.tidal_id || track.id),
         title: String(track.title || "Unknown Title"),
-        album: track.album || null,
+        artist: String(track.artist || "Unknown Artist"),
+        album: track.album || "",
+        album_id: track.album_id || null,
         track_number: track.track_number || track.trackNumber || null,
         cover: track.cover || null,
-        quality: String(currentQuality),
-        organization_template: organizationTemplate,
-        group_compilations: groupCompilations,
-        run_beets: runBeets,
-        embed_lyrics: embedLyrics,
-      };
+        quality: quality || "HIGH",
+        target_format: null,
+        bitrate_kbps: null,
+        run_beets: runBeets || false,
+        embed_lyrics: embedLyrics || false,
+        organization_template: organizationTemplate || "{Artist}/{Album}/{TrackNumber} - {Title}",
+        group_compilations: groupCompilations !== false,
+      }));
 
-      console.log("Starting download...");
+      const result = await api.addToQueue(formattedTracks);
+      console.log(`✅ Added ${result.added} tracks to server queue (${result.skipped} skipped)`);
 
-      const authHeader = useAuthStore.getState().getAuthHeader();
-      const headers = {
-        "Content-Type": "application/json",
-      };
-      if (authHeader) {
-        headers["Authorization"] = authHeader;
-      }
+      // Refresh state
+      await this.syncQueueState();
 
-      const response = await fetch(`${API_BASE}/download/track`, {
-        method: "POST",
-        headers: headers,
-        body: JSON.stringify(requestBody),
-        credentials: "include",
-      });
-
-      console.log(`Response status: ${response.status} ${response.statusText}`);
-
-      if (response.status === 401) {
-        useAuthStore.getState().clearCredentials();
-        throw new Error("Authentication required");
-      }
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error response body:", errorText);
-
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { detail: errorText || response.statusText };
-        }
-
-        if (
-          currentQuality === "HI_RES_LOSSLESS" &&
-          (errorData.detail?.includes("not found") ||
-            errorData.detail?.includes("404"))
-        ) {
-          console.log(
-            "  HI_RES_LOSSLESS not available, falling back to LOSSLESS..."
-          );
-          addToast(
-            `HI_RES quality not available for "${track.title}". Trying LOSSLESS...`,
-            "warning"
-          );
-
-          if (streamReader) {
-            streamReader.cancel();
-            streamReader = null;
-          }
-
-          downloadCompleted = false;
-          currentQuality = "LOSSLESS";
-          requestBody.quality = "LOSSLESS";
-
-          updateProgress(track.id, 0);
-
-          const newDownloadPromise = setupProgressMonitoring();
-
-          await this.sleep(500);
-
-          const fallbackResponse = await fetch(`${API_BASE}/download/track`, {
-            method: "POST",
-            headers: headers,
-            body: JSON.stringify(requestBody),
-            credentials: "include",
-          });
-
-          if (fallbackResponse.status === 401) {
-            useAuthStore.getState().clearCredentials();
-            throw new Error("Authentication required");
-          }
-
-          if (!fallbackResponse.ok) {
-            const fallbackErrorText = await fallbackResponse.text();
-            let fallbackErrorData;
-            try {
-              fallbackErrorData = JSON.parse(fallbackErrorText);
-            } catch {
-              fallbackErrorData = {
-                detail: fallbackErrorText || fallbackResponse.statusText,
-              };
-            }
-            throw new Error(
-              fallbackErrorData.detail || `HTTP ${fallbackResponse.status}`
-            );
-          }
-
-          const fallbackResult = await fallbackResponse.json();
-          console.log("Fallback download started:", fallbackResult);
-
-          if (fallbackResult.status === "downloading") {
-            console.log("  Waiting for fallback download to complete...");
-            await newDownloadPromise;
-          } else if (fallbackResult.status === "exists") {
-            downloadCompleted = true;
-            updateProgress(track.id, 100);
-          }
-
-          completeDownload(track.id, fallbackResult.filename);
-          console.log(`✓ Downloaded (LOSSLESS): ${fallbackResult.filename}`);
-          addToast(
-            `Downloaded "${track.title}" in LOSSLESS quality`,
-            "success"
-          );
-          if (fallbackResult.path) {
-            console.log(`  Location: ${fallbackResult.path}`);
-          }
-        } else {
-          throw new Error(errorData.detail || `HTTP ${response.status}`);
-        }
-      } else {
-        const result = await response.json();
-        console.log("Download started:", result);
-
-        if (result.status === "downloading") {
-          console.log("  Waiting for download to complete...");
-          await downloadCompletionPromise;
-        } else if (result.status === "exists") {
-          downloadCompleted = true;
-          updateProgress(track.id, 100);
-        }
-
-        completeDownload(track.id, result.filename);
-        console.log(`✓ Downloaded: ${result.filename}`);
-        if (result.path) {
-          console.log(`  Location: ${result.path}`);
-        }
-      }
+      return result;
     } catch (error) {
-      console.error(`✗ Download failed: ${track.title}`, error);
-      failDownload(track.id, error.message);
-      addToast(
-        `Failed to download "${track.title}": ${error.message}`,
+      console.error("Error adding to server queue:", error);
+      useToastStore.getState().addToast(
+        `Failed to add to queue: ${error.message}`,
         "error"
       );
-    } finally {
-      if (streamReader) {
-        try {
-          streamReader.cancel();
-        } catch (e) {
-          console.error("Error canceling stream reader:", e);
-        }
-        streamReader = null;
-      }
+      return { added: 0, skipped: tracks.length };
     }
-
-    await this.sleep(1000);
   }
 
-  async downloadTrackClientSide(track) {
-    const {
-      startDownload,
-      completeDownload,
-      failDownload,
-      updateProgress,
-      quality,
-    } = useDownloadStore.getState();
-
-    startDownload(track.id);
-
-    const controller = new AbortController();
-    this.activeDownloads.set(track.id, controller);
-
+  /**
+   * Remove a track from the queue
+   */
+  async removeFromQueue(trackId) {
     try {
-      console.log(`⬇️ Downloading: ${track.artist} - ${track.title}`);
-
-      const streamData = await api.get(`/download/stream/${track.tidal_id}`, {
-        quality,
-      });
-
-      if (!streamData.stream_url) {
-        throw new Error("No stream URL returned");
-      }
-
-      const response = await fetch(streamData.stream_url, {
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const totalBytes = parseInt(
-        response.headers.get("content-length") || "0"
-      );
-      let receivedBytes = 0;
-
-      const reader = response.body.getReader();
-      const chunks = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        chunks.push(value);
-        receivedBytes += value.length;
-
-        if (totalBytes > 0) {
-          const progress = Math.round((receivedBytes / totalBytes) * 100);
-          updateProgress(track.id, progress);
-        }
-      }
-
-      const blob = new Blob(chunks, {
-        type: response.headers.get("content-type") || "audio/flac",
-      });
-
-      const filename = this.sanitizeFilename(
-        `${track.artist} - ${track.title}.flac`
-      );
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      completeDownload(track.id, filename);
-      console.log(
-        `✓ Downloaded: ${filename} (${(receivedBytes / 1024 / 1024).toFixed(
-          2
-        )} MB)`
-      );
+      await api.removeFromQueue(trackId);
+      await this.syncQueueState();
+      return true;
     } catch (error) {
-      if (error.name === "AbortError") {
-        console.log(`⏹️ Download cancelled: ${track.title}`);
-        failDownload(track.id, "Download cancelled");
-      } else {
-        console.error(`✗ Download failed: ${track.title}`, error);
-        failDownload(track.id, error.message);
-      }
-    } finally {
-      this.activeDownloads.delete(track.id);
+      console.error("Error removing from queue:", error);
+      return false;
     }
-
-    await this.sleep(1000);
   }
 
-  sanitizeFilename(filename) {
-    const invalid = /[<>:"/\\|?*]/g;
-    return filename.replace(invalid, "_").trim();
+  /**
+   * Clear the server queue
+   */
+  async clearQueue() {
+    try {
+      const result = await api.clearQueue();
+      console.log(`Cleared ${result.cleared} items from queue`);
+      await this.syncQueueState();
+      return result.cleared;
+    } catch (error) {
+      console.error("Error clearing queue:", error);
+      return 0;
+    }
   }
 
-  sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  /**
+   * Clear completed items
+   */
+  async clearCompleted() {
+    try {
+      const result = await api.clearCompleted();
+      await this.syncQueueState();
+      return result.cleared;
+    } catch (error) {
+      console.error("Error clearing completed:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Clear failed items
+   */
+  async clearFailed() {
+    try {
+      const result = await api.clearFailed();
+      await this.syncQueueState();
+      return result.cleared;
+    } catch (error) {
+      console.error("Error clearing failed:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Retry all failed downloads
+   */
+  async retryAllFailed() {
+    try {
+      const result = await api.retryAllFailed();
+      console.log(`Retried ${result.retried} failed downloads`);
+      await this.syncQueueState();
+      return result.retried;
+    } catch (error) {
+      console.error("Error retrying failed:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Retry a single failed download
+   */
+  async retryFailed(trackId) {
+    try {
+      const result = await api.retryFailed(trackId);
+      await this.syncQueueState();
+      return result.success;
+    } catch (error) {
+      console.error("Error retrying failed download:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Start queue processing on server (for manual mode)
+   */
+  async start() {
+    try {
+      console.log("🎵 Requesting server queue processing start...");
+      const result = await api.startQueue();
+      console.log("✅ Server queue started:", result.message);
+      await this.syncQueueState();
+    } catch (error) {
+      console.error("Error starting server queue:", error);
+    }
+  }
+
+  /**
+   * Stop queue processing on server
+   */
+  async stop() {
+    try {
+      console.log("🛑 Requesting server queue processing stop...");
+      const result = await api.stopQueue();
+      console.log("✅ Server queue stopped:", result.message);
+      await this.syncQueueState();
+    } catch (error) {
+      console.error("Error stopping server queue:", error);
+    }
+  }
+
+  /**
+   * Get queue settings from server
+   */
+  async getQueueSettings() {
+    try {
+      return await api.getQueueSettings();
+    } catch (error) {
+      console.error("Error getting queue settings:", error);
+      return { max_concurrent: 3, auto_process: true };
+    }
+  }
+
+  // Legacy method aliases for backwards compatibility
+  startServerQueueSync(intervalMs = 3000) {
+    this.syncIntervalMs = intervalMs;
+    this.startSync();
+  }
+
+  stopServerQueueSync() {
+    this.stopSync();
+  }
+
+  syncServerQueueToStore() {
+    return this.syncQueueState();
   }
 }
 

@@ -190,6 +190,96 @@ class ApiClient {
   get baseUrl() {
     return window.location.origin;
   }
+
+  // ============================================================================
+  // QUEUE API METHODS
+  // ============================================================================
+
+  /**
+   * Get current queue state from server
+   */
+  getQueue() {
+    return this.get("/queue");
+  }
+
+  /**
+   * Add tracks to the server queue
+   */
+  addToQueue(tracks, options = {}) {
+    return this.post("/queue/add", { tracks, ...options });
+  }
+
+  /**
+   * Remove a track from the queue
+   */
+  async removeFromQueue(trackId) {
+    const response = await fetch(`${API_BASE}/queue/${trackId}`, {
+      method: "DELETE",
+      headers: this.getHeaders(),
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to remove from queue: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Clear the queue
+   */
+  clearQueue() {
+    return this.post("/queue/clear");
+  }
+
+  /**
+   * Clear completed items
+   */
+  clearCompleted() {
+    return this.post("/queue/clear-completed");
+  }
+
+  /**
+   * Clear failed items
+   */
+  clearFailed() {
+    return this.post("/queue/clear-failed");
+  }
+
+  /**
+   * Retry all failed items
+   */
+  retryAllFailed() {
+    return this.post("/queue/retry-failed");
+  }
+
+  /**
+   * Retry a single failed item
+   */
+  retryFailed(trackId) {
+    return this.post(`/queue/retry/${trackId}`);
+  }
+
+  /**
+   * Start queue processing (for manual mode)
+   */
+  startQueue() {
+    return this.post("/queue/start");
+  }
+
+  /**
+   * Stop queue processing
+   */
+  stopQueue() {
+    return this.post("/queue/stop");
+  }
+
+  /**
+   * Get queue settings
+   */
+  getQueueSettings() {
+    return this.get("/queue/settings");
+  }
 }
 
 export const api = new ApiClient();

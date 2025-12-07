@@ -1,7 +1,7 @@
 import { h } from "preact";
 import { useState } from "preact/hooks";
 import { api } from "../api/client";
-import { useDownloadStore } from "../stores/downloadStore";
+import { downloadManager } from "../utils/downloadManager";
 import { useToastStore } from "../stores/toastStore";
 import { ArtistPage } from "./ArtistPage";
 import { AlbumPage } from "./AlbumPage";
@@ -14,7 +14,6 @@ export function SearchBar() {
   const [selected, setSelected] = useState(new Set());
   const [error, setError] = useState(null);
 
-  const addToQueue = useDownloadStore((state) => state.addToQueue);
   const addToast = useToastStore((state) => state.addToast);
 
   const handleSearchTypeChange = async (newType) => {
@@ -102,11 +101,12 @@ export function SearchBar() {
         tidal_exists: true,
       }));
 
-    addToQueue(selectedTracks);
-    addToast(
-      `Added ${selectedTracks.length} tracks to download queue`,
-      "success"
-    );
+    downloadManager.addToServerQueue(selectedTracks).then(result => {
+      addToast(
+        `Added ${result.added} tracks to download queue`,
+        "success"
+      );
+    });
     setSelected(new Set());
   };
 
@@ -167,8 +167,8 @@ export function SearchBar() {
           <label
             key={type}
             class={`flex items-center gap-3 px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 ${searchType === type
-                ? "bg-primary text-white shadow-sm"
-                : "bg-surface hover:bg-background-alt border border-border"
+              ? "bg-primary text-white shadow-sm"
+              : "bg-surface hover:bg-background-alt border border-border"
               }`}
           >
             <input
