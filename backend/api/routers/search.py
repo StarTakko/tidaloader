@@ -92,11 +92,22 @@ async def get_album_tracks(album_id: int, username: str = Depends(require_auth))
         
         if not result:
             return {"items": []}
-            
-        tracks = extract_items(result, 'tracks')
-        if not tracks and isinstance(result, list):
-             tracks = result
-             
+        
+        # Handle v2 wrapper
+        if isinstance(result, dict) and 'data' in result and 'version' in result:
+            result = result['data']
+        
+        # The /album/ endpoint returns items directly (not under 'tracks' key)
+        # Each item is wrapped: {"item": {...track...}, "type": "track"}
+        raw_items = result.get('items', []) if isinstance(result, dict) else result
+        
+        tracks = []
+        for item in raw_items:
+            # Unwrap if nested in 'item' key
+            track = item.get('item', item) if isinstance(item, dict) else item
+            if isinstance(track, dict) and 'id' in track:
+                tracks.append(track)
+        
         log_info(f"Found {len(tracks)} tracks in album")
         
         # Convert to same format as search results
@@ -104,11 +115,11 @@ async def get_album_tracks(album_id: int, username: str = Depends(require_auth))
             "items": [
                 TrackSearchResult(
                     id=track['id'],
-                    title=track['title'],
-                    artist=track.get('artist', {}).get('name', 'Unknown'),
-                    album=track.get('album', {}).get('title'),
+                    title=track.get('title', 'Unknown'),
+                    artist=track.get('artist', {}).get('name', 'Unknown') if isinstance(track.get('artist'), dict) else (track.get('artists', [{}])[0].get('name', 'Unknown') if track.get('artists') else 'Unknown'),
+                    album=track.get('album', {}).get('title') if isinstance(track.get('album'), dict) else None,
                     duration=track.get('duration'),
-                    cover=track.get('album', {}).get('cover'),
+                    cover=track.get('album', {}).get('cover') if isinstance(track.get('album'), dict) else None,
                     quality=track.get('audioQuality')
                 )
                 for track in tracks

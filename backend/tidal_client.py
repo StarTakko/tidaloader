@@ -301,7 +301,8 @@ class TidalAPIClient:
         return self._make_request("/album/", {"id": album_id}, operation="get_album")
     
     def get_album_tracks(self, album_id: int) -> Optional[Dict]:
-        return self._make_request("/album/tracks", {"id": album_id}, operation="get_album_tracks")
+        # The /album/ endpoint returns tracks in the 'items' field
+        return self._make_request("/album/", {"id": album_id}, operation="get_album_tracks")
     
     def get_artist(self, artist_id: int) -> Optional[Dict]:
         return self._make_request("/artist/", {"f": artist_id}, operation="get_artist")

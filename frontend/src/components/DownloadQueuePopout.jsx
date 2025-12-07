@@ -17,8 +17,10 @@ export function DownloadQueuePopout() {
   const failed = useDownloadStore((state) => state.failed);
   const removeFromQueue = useDownloadStore((state) => state.removeFromQueue);
   const retryFailed = useDownloadStore((state) => state.retryFailed);
+  const retryAllFailed = useDownloadStore((state) => state.retryAllFailed);
   const clearCompleted = useDownloadStore((state) => state.clearCompleted);
   const clearFailed = useDownloadStore((state) => state.clearFailed);
+  const clearQueue = useDownloadStore((state) => state.clearQueue);
 
   const totalInQueue = queue.length + downloading.length;
   const totalActivity = totalInQueue + completed.length + failed.length;
@@ -327,9 +329,17 @@ export function DownloadQueuePopout() {
 
                 {queue.length > 0 && (
                   <div>
-                    <h3 class="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">
-                      Queued ({queue.length})
-                    </h3>
+                    <div class="flex items-center justify-between mb-2">
+                      <h3 class="text-xs font-semibold text-text-muted uppercase tracking-wide">
+                        Queued ({queue.length})
+                      </h3>
+                      <button
+                        class="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors px-2 py-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                        onClick={clearQueue}
+                      >
+                        Clear Queue
+                      </button>
+                    </div>
                     <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                       {queue.map((track) => (
                         <div
@@ -412,11 +422,32 @@ export function DownloadQueuePopout() {
                         Failed ({failed.length})
                       </h3>
                       <button
-                        class="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors"
+                        class="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors px-2 py-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                         onClick={clearFailed}
                       >
                         Clear All
                       </button>
+                      {failed.length > 1 && (
+                        <button
+                          class="text-xs text-primary hover:text-primary-dark font-medium transition-colors px-2 py-1 hover:bg-primary/10 rounded flex items-center gap-1"
+                          onClick={retryAllFailed}
+                        >
+                          <svg
+                            class="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                            />
+                          </svg>
+                          Retry All
+                        </button>
+                      )}
                     </div>
                     <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                       {failed.map((track) => (

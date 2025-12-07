@@ -131,6 +131,22 @@ export const useDownloadStore = create(
 
       clearFailed: () => set({ failed: [] }),
 
+      clearQueue: () => set({ queue: [] }),
+
+      retryAllFailed: () =>
+        set((state) => {
+          const retryTracks = state.failed.map((track) => ({
+            ...track,
+            status: "queued",
+            error: undefined,
+            progress: 0,
+          }));
+          return {
+            failed: [],
+            queue: [...state.queue, ...retryTracks],
+          };
+        }),
+
       setQuality: (quality) => set({ quality }),
       setOrganizationTemplate: (template) => set({ organizationTemplate: template }),
       setGroupCompilations: (enabled) => set({ groupCompilations: enabled }),
