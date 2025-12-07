@@ -567,18 +567,20 @@ async def process_queue_item(item: QueueItem):
         is_opus_request = requested_quality in OPUS_QUALITY_MAP
         source_quality = 'LOSSLESS' if is_mp3_request or is_opus_request else requested_quality
         
-        # Get full track metadata (trackNumber, album, artist, cover, etc.)
-        track_metadata = tidal_client.get_track_metadata(track_id)
-        
         # Get track playback info (stream URL, manifest) from API
         track_info = tidal_client.get_track(track_id, source_quality)
         if not track_info:
             raise Exception("Track not found")
         
-        # Build metadata - prefer API data over queue item data
+        # Build metadata - use queue item data (passed from frontend)
+        # Frontend components now correctly pass cover and track_number
         metadata = {
             'quality': requested_quality,
-            'source_quality': source_quality
+            'source_quality': source_quality,
+            'title': item.title,
+            'artist': item.artist,
+            'album': item.album,
+            'track_number': item.track_number,
         }
         
         if is_mp3_request:
@@ -588,50 +590,10 @@ async def process_queue_item(item: QueueItem):
             metadata['target_format'] = 'opus'
             metadata['bitrate_kbps'] = OPUS_QUALITY_MAP[requested_quality]
         
-        # Use track_metadata for full info (trackNumber, album.cover, etc.)
-        track_data = track_metadata if track_metadata else {}
-        
-        if isinstance(track_data, dict):
-            metadata['title'] = track_data.get('title') or item.title
-            metadata['track_number'] = track_data.get('trackNumber') or item.track_number
-            metadata['disc_number'] = track_data.get('volumeNumber')
-            metadata['date'] = track_data.get('streamStartDate', '').split('T')[0] if track_data.get('streamStartDate') else None
-            metadata['duration'] = track_data.get('duration')
-            
-            artist_data = track_data.get('artist', {})
-            if isinstance(artist_data, dict) and artist_data.get('name'):
-                metadata['artist'] = artist_data.get('name')
-            else:
-                metadata['artist'] = item.artist
-            
-            album_data = track_data.get('album', {})
-            if isinstance(album_data, dict) and album_data.get('title'):
-                metadata['album'] = album_data.get('title')
-                metadata['album_artist'] = album_data.get('artist', {}).get('name') if isinstance(album_data.get('artist'), dict) else None
-                metadata['total_tracks'] = album_data.get('numberOfTracks')
-                metadata['total_discs'] = album_data.get('numberOfVolumes')
-                
-                cover_id = album_data.get('cover')
-                if cover_id:
-                    cover_id_str = str(cover_id).replace('-', '/')
-                    metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
-                    
-                album_artist = metadata.get('album_artist') or ''
-                if album_data.get('type') == 'COMPILATION' or (album_artist and album_artist.lower() in ['various artists', 'various']):
-                    metadata['compilation'] = True
-            else:
-                metadata['album'] = item.album
-                if item.cover:
-                    cover_id_str = str(item.cover).replace('-', '/')
-                    metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
-        else:
-            metadata['title'] = item.title
-            metadata['artist'] = item.artist
-            metadata['album'] = item.album
-            metadata['track_number'] = item.track_number
-            if item.cover:
-                cover_id_str = str(item.cover).replace('-', '/')
-                metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
+        # Add cover URL from queue item (frontend passes this now)
+        if item.cover:
+            cover_id_str = str(item.cover).replace('-', '/')
+            metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
         
         # Get stream URL
         stream_url = extract_stream_url(track_info)
