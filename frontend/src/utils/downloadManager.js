@@ -149,6 +149,7 @@ class DownloadManager {
         title: String(track.title || "Unknown Title"),
         artist: String(track.artist || "Unknown Artist"),
         album: track.album || "",
+        album_artist: track.album_artist || track.albumArtist || null, // Pass Album Artist
         album_id: track.album_id || null,
         track_number: track.track_number || track.trackNumber || null,
         cover: track.cover || null,

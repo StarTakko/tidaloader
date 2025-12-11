@@ -44,6 +44,11 @@ class QueueItem:
     tidal_track_id: Optional[str] = None
     tidal_artist_id: Optional[str] = None
     tidal_album_id: Optional[str] = None
+    tidal_artist_id: Optional[str] = None
+    tidal_album_id: Optional[str] = None
+    
+    # Context
+    album_artist: Optional[str] = None # Capture Album Artist context from Frontend
     
     # Request metadata for download
     target_format: Optional[str] = None

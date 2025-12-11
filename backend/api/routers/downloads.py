@@ -418,6 +418,7 @@ class QueueTrackItem(BaseModel):
     title: str
     artist: str
     album: Optional[str] = ""
+    album_artist: Optional[str] = "" 
     album_id: Optional[int] = None
     track_number: Optional[int] = None
     cover: Optional[str] = None
@@ -463,6 +464,7 @@ async def add_to_queue(
             title=track.title,
             artist=track.artist,
             album=track.album or "",
+            album_artist=track.album_artist or "",  # Capture Album Artist
             album_id=track.album_id,
             track_number=track.track_number,
             cover=track.cover,
@@ -607,6 +609,7 @@ async def process_queue_item(item: QueueItem):
             'title': item.title,
             'artist': item.artist,
             'album': item.album,
+            'album_artist': item.album_artist or item.artist, # Use passed album_artist or fallback to artist
             'track_number': item.track_number,
             'tidal_track_id': item.tidal_track_id or str(track_id),
             'tidal_artist_id': item.tidal_artist_id,

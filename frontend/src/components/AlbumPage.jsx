@@ -95,6 +95,7 @@ export function AlbumPage({ albumId, onBack }) {
         title: t.title,
         artist: t.artist || album?.artist?.name || "Unknown Artist",
         album: album?.title || t.album,
+        album_artist: album?.artist?.name, // Pass the Album Artist
         track_number: t.trackNumber || t.track_number || (index + 1),
         cover: album?.cover || t.cover,
         tidal_exists: true,
