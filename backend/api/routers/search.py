@@ -33,6 +33,8 @@ async def search_tracks(q: str, username: str = Depends(require_auth)):
                     duration=track.get('duration'),
                     cover=track.get('album', {}).get('cover'),
                     quality=track.get('audioQuality'),
+                    trackNumber=track.get('trackNumber'),
+                    albumArtist=track.get('album', {}).get('artist', {}).get('name') if track.get('album', {}).get('artist') else track.get('artist', {}).get('name', 'Unknown'),
                     tidal_artist_id=track.get('artist', {}).get('id'),
                     tidal_album_id=track.get('album', {}).get('id')
                 )
@@ -127,8 +129,10 @@ async def get_album_tracks(album_id: int, username: str = Depends(require_auth))
                     duration=track.get('duration'),
                     cover=track.get('album', {}).get('cover') if isinstance(track.get('album'), dict) else None,
                     quality=track.get('audioQuality'),
-                    tidal_artist_id=track.get('artist', {}).get('id') if isinstance(track.get('artist'), dict) else None,
-                    tidal_album_id=track.get('album', {}).get('id') if isinstance(track.get('album'), dict) else None
+                    trackNumber=track.get('trackNumber'),
+                    albumArtist=track.get('album', {}).get('artist', {}).get('name') if track.get('album', {}).get('artist') else (track.get('artist', {}).get('name', 'Unknown') if isinstance(track.get('artist'), dict) else 'Unknown'),
+                    tidal_artist_id=track.get('artist', {}).get('id') if isinstance(track.get('artist'), dict) else (track.get('artists', [{}])[0].get('id') if track.get('artists') else None),
+                    tidal_album_id=track.get('album', {}).get('id') if isinstance(track.get('album'), dict) else album_id
                 )
                 for track in tracks
             ]

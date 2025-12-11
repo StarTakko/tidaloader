@@ -13,6 +13,8 @@ class TrackSearchResult(BaseModel):
     duration: Optional[int] = None
     cover: Optional[str] = None
     quality: Optional[str] = None
+    trackNumber: Optional[int] = None
+    albumArtist: Optional[str] = None
     tidal_artist_id: Optional[int] = None
     tidal_album_id: Optional[int] = None
 

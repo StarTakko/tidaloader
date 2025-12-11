@@ -595,11 +595,7 @@ async def process_queue_item(item: QueueItem):
         if isinstance(track_info, list) and len(track_info) > 0:
             track_data = track_info[0]
         else:
-            track_data = track_info
-            
-        # REVERTED: get_track_metadata was using an invalid route.
-        # Now relying on frontend-provided IDs via QueueItem.
-        metadata_info = {} 
+            track_data = track_info 
 
         # Build metadata - use queue item data (passed from frontend)
         # Frontend components now correctly pass cover and track_number

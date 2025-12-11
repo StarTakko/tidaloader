@@ -403,10 +403,11 @@ const UnifiedAlbumModal = ({ album, artistName, onClose, api, downloadManager, a
                 album: album.title,
                 cover: album.cover,
                 track_number: t.trackNumber,
+                album_artist: t.albumArtist || artistName,
                 tidal_exists: true,
                 tidal_track_id: t.id,
-                tidal_artist_id: t.artist?.id,
-                tidal_album_id: t.album?.id || album.remoteId
+                tidal_artist_id: t.tidal_artist_id || t.artist?.id,
+                tidal_album_id: t.tidal_album_id || t.album?.id || album.remoteId
             }));
 
         if (toDownload.length === 0) return;
@@ -432,10 +433,11 @@ const UnifiedAlbumModal = ({ album, artistName, onClose, api, downloadManager, a
                 album: album.title,
                 cover: album.cover,
                 track_number: t.trackNumber,
+                album_artist: t.albumArtist || artistName,
                 tidal_exists: true,
                 tidal_track_id: t.id,
-                tidal_artist_id: t.artist?.id,
-                tidal_album_id: t.album?.id || album.remoteId
+                tidal_artist_id: t.tidal_artist_id || t.artist?.id,
+                tidal_album_id: t.tidal_album_id || t.album?.id || album.remoteId
             }));
 
         if (toDownload.length === 0) {
