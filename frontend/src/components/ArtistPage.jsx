@@ -98,8 +98,6 @@ export function ArtistPage({ artistId, onBack }) {
         tidal_exists: true,
         tidal_track_id: t.id,
         tidal_artist_id: t.artist?.id || artistId,
-        tidal_track_id: t.id,
-        tidal_artist_id: t.artist?.id || artistId,
         tidal_album_id: t.album?.id,
         album_artist: t.album?.artist?.name, // From Top Tracks album info
       }));
@@ -136,6 +134,7 @@ export function ArtistPage({ artistId, onBack }) {
           tidal_track_id: t.id,
           tidal_artist_id: t.tidal_artist_id || t.artist?.id,
           tidal_album_id: t.tidal_album_id || album.id,
+          album_artist: album.artist?.name,
         }));
 
         const res = await downloadManager.addToServerQueue(tracks);
@@ -184,6 +183,7 @@ export function ArtistPage({ artistId, onBack }) {
           tidal_track_id: t.id,
           tidal_artist_id: t.tidal_artist_id || t.artist?.id,
           tidal_album_id: t.tidal_album_id || album.id,
+          album_artist: album.artist?.name,
         }));
 
         const res = await downloadManager.addToServerQueue(tracks);
@@ -631,7 +631,6 @@ function AlbumTracksModal({ album, onClose }) {
         cover: album.cover,
         track_number: t.trackNumber || index + 1,
         tidal_exists: true,
-        tidal_track_id: t.id,
         tidal_track_id: t.id,
         tidal_artist_id: t.tidal_artist_id || t.artist?.id,
         tidal_album_id: t.tidal_album_id || album.id,
