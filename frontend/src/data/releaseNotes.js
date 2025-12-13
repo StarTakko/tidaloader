@@ -1,5 +1,13 @@
 export const releaseNotes = [
     {
+        version: "1.0.1",
+        date: "2025-12-13",
+        title: "Playlist Download Support",
+        changes: [
+            "Added support for downloading playlists thanks to @Oduanir."
+        ]
+    },
+    {
         version: "1.0.0",
         date: "2025-12-13",
         title: "Themes Update & Proper Versioning",
