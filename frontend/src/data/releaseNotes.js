@@ -1,5 +1,13 @@
 export const releaseNotes = [
     {
+        version: "1.0.2",
+        date: "2025-12-14",
+        title: "Easter egg",
+        changes: [
+            "Added cool nyan cat easter egg"
+        ]
+    },
+    {
         version: "1.0.1",
         date: "2025-12-13",
         title: "Playlist Download Support",

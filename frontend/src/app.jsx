@@ -14,6 +14,7 @@ import { Toast } from "./components/Toast";
 import { ThemePicker } from "./components/ThemePicker";
 
 import { ReleaseNotes } from "./components/ReleaseNotes";
+import { NyanCatEasterEgg } from "./components/NyanCatEasterEgg";
 import { releaseNotes } from "./data/releaseNotes";
 import { useEffect } from "preact/hooks";
 
@@ -179,6 +180,7 @@ export function App() {
           {activeTab === "library" && <LibraryPage />}
         </main>
       </div>
+      <NyanCatEasterEgg />
     </div>
   );
 }
