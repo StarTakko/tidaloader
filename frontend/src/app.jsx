@@ -1,6 +1,7 @@
 import { h } from "preact";
 import { useState } from "preact/hooks";
 import { Router } from "preact-router";
+import logo from "./assets/tsunami.svg";
 import { useAuthStore } from "./store/authStore";
 import { Login } from "./components/Login";
 import { SearchBar } from "./components/SearchBar";
@@ -12,11 +13,37 @@ import { Toast } from "./components/Toast";
 
 import { ThemePicker } from "./components/ThemePicker";
 
+import { ReleaseNotes } from "./components/ReleaseNotes";
+import { releaseNotes } from "./data/releaseNotes";
+import { useEffect } from "preact/hooks";
+
 export function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const clearCredentials = useAuthStore((state) => state.clearCredentials);
   const [activeTab, setActiveTab] = useState("search");
   const [showSettings, setShowSettings] = useState(false);
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (releaseNotes.length > 0) {
+        const latestVersion = releaseNotes[0].version;
+        const lastSeen = localStorage.getItem("last-seen-version");
+        if (lastSeen !== latestVersion) {
+          setShowReleaseNotes(true);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to check release notes version", e);
+    }
+  }, []);
+
+  const handleCloseReleaseNotes = () => {
+    setShowReleaseNotes(false);
+    if (releaseNotes.length > 0) {
+      localStorage.setItem("last-seen-version", releaseNotes[0].version);
+    }
+  };
 
   if (!isAuthenticated) {
     return <Login />;
@@ -28,12 +55,26 @@ export function App() {
       <header class="bg-surface border-b border-border-light px-4 py-3 shadow-sm">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
           <div class="flex items-center gap-3">
-            <div class="flex items-center justify-center w-10 h-10 bg-primary rounded-xl">
-              <span class="text-2xl">🦑</span>
+            <div class="flex items-center justify-center w-10 h-10 bg-primary rounded-xl overflow-hidden">
+              <img src={logo} alt="Tidaloader Logo" class="w-8 h-8 object-contain" />
             </div>
             <h1 class="text-xl sm:text-2xl font-bold text-text">Tidaloader</h1>
           </div>
           <div class="flex items-center gap-3">
+            <button
+              onClick={() => setShowReleaseNotes(true)}
+              class="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-text-muted hover:text-text hover:bg-surface-alt rounded-lg transition-all duration-200"
+              title="What's New"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span>What's New</span>
+            </button>
             <ThemePicker />
             <button
               onClick={clearCredentials}
@@ -58,6 +99,10 @@ export function App() {
         </div>
       </header>
 
+      <ReleaseNotes
+        isOpen={showReleaseNotes}
+        onClose={handleCloseReleaseNotes}
+      />
       <Toast />
       <DownloadQueuePopout />
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
