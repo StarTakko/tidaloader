@@ -1,5 +1,5 @@
 /**
- * API client for Troi Tidal Downloader backend
+ * API client for Tidaloader backend
  */
 
 import { useAuthStore } from "../store/authStore";

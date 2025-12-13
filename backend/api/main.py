@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     await queue_manager.stop_processing()
 
-app = FastAPI(title="Troi Tidal Downloader API", lifespan=lifespan)
+app = FastAPI(title="Tidaloader API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

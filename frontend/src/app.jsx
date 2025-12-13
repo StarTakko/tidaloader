@@ -10,7 +10,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { LibraryPage } from "./components/LibraryPage";
 import { Toast } from "./components/Toast";
 
-import { ThemeToggle } from "./components/ThemeToggle";
+import { ThemePicker } from "./components/ThemePicker";
 
 export function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -34,7 +34,7 @@ export function App() {
             <h1 class="text-xl sm:text-2xl font-bold text-text">Tidaloader</h1>
           </div>
           <div class="flex items-center gap-3">
-            <ThemeToggle />
+            <ThemePicker />
             <button
               onClick={clearCredentials}
               class="flex items-center gap-2 px-4 py-2 bg-surface-alt hover:bg-background-alt border border-border text-text-muted hover:text-text rounded-lg text-sm transition-all duration-200"
@@ -63,7 +63,7 @@ export function App() {
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <h1 class="text-2xl sm:text-3xl font-bold text-text">
-            Troi Tidal Downloader
+            Tidaloader
           </h1>
           <button
             class="btn-surface flex items-center gap-2 self-start sm:self-auto"
