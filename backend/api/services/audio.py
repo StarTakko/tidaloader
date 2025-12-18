@@ -200,7 +200,6 @@ async def write_flac_metadata(filepath: Path, metadata: dict):
         if metadata.get('cover_url'):
             try:
                 async with aiohttp.ClientSession() as session:
-                    log_info(f"[DEBUG] Cover URL: {metadata['cover_url']}")
                     async with session.get(metadata['cover_url']) as response:
                         if response.status == 200:
                             image_data = await response.read()

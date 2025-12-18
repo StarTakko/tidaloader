@@ -351,9 +351,6 @@ class PlaylistManager:
                     image_guid = str(val).strip()
                     break
             
-            logger.info(f"[DEBUG] Playlist info keys: {list(pl_info.keys())}")
-            logger.info(f"[DEBUG] Extracted Image GUID: {image_guid}")
-
             if not image_guid:
                 logger.warning(f"No image GUID found for playlist {playlist.name}")
                 return
@@ -365,8 +362,6 @@ class PlaylistManager:
             # Try 1280x1280 first (often High Res), fallback to 640x640 if needed (frontend uses various)
             # But let's stick to 640x640 as safety for now as it matched downloads.py
             image_url = f"https://resources.tidal.com/images/{image_path}/640x640.jpg"
-            
-            logger.info(f"[DEBUG] Constructed Cover URL: {image_url}")
 
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
