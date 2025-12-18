@@ -334,27 +334,40 @@ class PlaylistManager:
                 logger.warning(f"No playlist info returned for {playlist.name}")
                 return
             
-            # Unwrap response if needed
+            # Wrapper unwrapping logic
             if 'data' in pl_info:
                 pl_info = pl_info['data']
-                
-            # Sometimes it's nested in 'item' or 'playlist'
+            
             if 'item' in pl_info:
                 pl_info = pl_info['item']
             elif 'playlist' in pl_info:
                 pl_info = pl_info['playlist']
-                
-            image_guid = pl_info.get('image') or pl_info.get('squareImage')
+
+            # Robust ID extraction (like search.py)
+            priority_keys = ['squareImage', 'image', 'cover', 'picture', 'imageId']
+            image_guid = None
+            for key in priority_keys:
+                if val := pl_info.get(key):
+                    image_guid = str(val).strip()
+                    break
+            
+            logger.info(f"[DEBUG] Playlist info keys: {list(pl_info.keys())}")
+            logger.info(f"[DEBUG] Extracted Image GUID: {image_guid}")
+
             if not image_guid:
-                logger.warning(f"No image GUID found in playlist info keys: {list(pl_info.keys())}")
+                logger.warning(f"No image GUID found for playlist {playlist.name}")
                 return
-                
                 
             # Construct URL (Tidal Resource URL)
             # Must split UUID with slashes: c825... -> c825/....
             image_path = image_guid.replace('-', '/')
+            
+            # Try 1280x1280 first (often High Res), fallback to 640x640 if needed (frontend uses various)
+            # But let's stick to 640x640 as safety for now as it matched downloads.py
             image_url = f"https://resources.tidal.com/images/{image_path}/640x640.jpg"
             
+            logger.info(f"[DEBUG] Constructed Cover URL: {image_url}")
+
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
