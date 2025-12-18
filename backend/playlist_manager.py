@@ -11,7 +11,7 @@ import aiofiles
 
 from api.settings import settings, DOWNLOAD_DIR, PLAYLISTS_DIR
 from api.clients import tidal_client
-from api.services.files import get_output_relative_path
+from api.services.files import get_output_relative_path, sanitize_path_component
 # from api.utils.logging import log_info, log_error, log_warning (Using standard logger instead)
 from queue_manager import queue_manager, QueueItem
 
@@ -111,19 +111,31 @@ class PlaylistManager:
         self._playlists = [p for p in self._playlists if p.uuid != uuid]
         self._save_state()
         
-        # Delete m3u8 file and cover
+        # Delete m3u8 file and cover (or entire folder if using new strategy)
         try:
             file_path = PLAYLISTS_DIR / playlist.path
-            base_name = str(Path(playlist.path).stem)
-            cover_path = PLAYLISTS_DIR / f"{base_name}.jpg"
             
-            if file_path.exists():
-                file_path.unlink()
-                logger.info(f"Deleted playlist file: {file_path}")
-            
-            if cover_path.exists():
-                cover_path.unlink()
-                logger.info(f"Deleted playlist cover: {cover_path}")
+            # Check if using Folder Strategy (Path contains a parent directory relative to PLAYLISTS_DIR)
+            # playlist.path like "Name/Name.m3u8"
+            if len(Path(playlist.path).parts) > 1:
+                # It's in a subfolder, remove the parent folder
+                parent_folder = file_path.parent
+                if parent_folder.exists() and parent_folder != PLAYLISTS_DIR:
+                    import shutil
+                    shutil.rmtree(parent_folder)
+                    logger.info(f"Deleted playlist folder: {parent_folder}")
+            else:
+                # Legacy: Flat file
+                base_name = str(Path(playlist.path).stem)
+                cover_path = PLAYLISTS_DIR / f"{base_name}.jpg"
+                
+                if file_path.exists():
+                    file_path.unlink()
+                    logger.info(f"Deleted playlist file: {file_path}")
+                
+                if cover_path.exists():
+                    cover_path.unlink()
+                    logger.info(f"Deleted playlist cover: {cover_path}")
                 
         except Exception as e:
             logger.error(f"Failed to delete playlist file/cover: {e}")
@@ -296,17 +308,30 @@ class PlaylistManager:
             logger.info("No missing tracks to download.")
 
         # 4. Write M3U8
-        playlist_file = PLAYLISTS_DIR / playlist.path
+        # Folder Strategy: Create folder for playlist
+        safe_name = sanitize_path_component(playlist.name)
+        playlist_folder = PLAYLISTS_DIR / safe_name
+        playlist_folder.mkdir(parents=True, exist_ok=True)
+        
+        # New M3U8 Path: {Name}/{Name}.m3u8
+        m3u8_filename = f"{safe_name}.m3u8"
+        playlist_file = playlist_folder / m3u8_filename
+        
         try:
             async with aiofiles.open(playlist_file, 'w', encoding='utf-8') as f:
                 await f.write("\n".join(m3u8_lines))
             logger.info(f"M3U8 written to {playlist_file}")
+            
+            # Update path in playlist object (Relative to PLAYLISTS_DIR)
+            # Must use forward slash for consistency
+            playlist.path = f"{safe_name}/{m3u8_filename}"
+            
         except Exception as e:
             logger.error(f"Failed to write M3U8: {e}")
             
         # 5. Download playlist cover (for Media Servers)
         try:
-           await self._ensure_playlist_cover(playlist)
+           await self._ensure_playlist_cover(playlist, playlist_folder)
         except Exception as e:
            logger.warning(f"Failed to ensure playlist cover: {e}")
 
@@ -317,11 +342,10 @@ class PlaylistManager:
         
         return {'status': 'success', 'queued': queued_count, 'total_tracks': len(raw_items)}
 
-    async def _ensure_playlist_cover(self, playlist: MonitoredPlaylist):
-        """Downloads the playlist cover image to {PlaylistName}.jpg if missing"""
-        base_name = str(Path(playlist.path).stem)
-        cover_filename = f"{base_name}.jpg"
-        cover_path = PLAYLISTS_DIR / cover_filename
+    async def _ensure_playlist_cover(self, playlist: MonitoredPlaylist, folder_path: Path):
+        """Downloads the playlist cover image to {PlaylistFolder}/folder.jpg if missing"""
+        # Target filename: folder.jpg (Standard for Jellyfin/Kodi etc)
+        cover_path = folder_path / "folder.jpg"
         
         if cover_path.exists():
             return
