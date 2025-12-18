@@ -349,10 +349,17 @@ class PlaylistManager:
                 logger.warning(f"No image GUID found in playlist info keys: {list(pl_info.keys())}")
                 return
                 
+                
             # Construct URL (Tidal Resource URL)
-            image_url = f"https://resources.tidal.com/images/{image_guid}/750x750.jpg"
+            # Must split UUID with slashes: c825... -> c825/....
+            image_path = image_guid.replace('-', '/')
+            image_url = f"https://resources.tidal.com/images/{image_path}/640x640.jpg"
             
-            async with aiohttp.ClientSession() as session:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+
+            async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(image_url) as resp:
                     if resp.status == 200:
                         async with aiofiles.open(cover_path, 'wb') as f:
