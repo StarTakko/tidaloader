@@ -8,7 +8,7 @@ from api.clients.spotify import SpotifyClient
 
 logger = logging.getLogger(__name__)
 
-async def process_spotify_playlist(playlist_uuid: str, progress_id: str):
+async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_validate: bool = False):
     queue = asyncio.Queue()
     lb_progress_queues[progress_id] = queue
     
@@ -29,12 +29,22 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str):
             raise Exception("No tracks found or playlist is private/invalid.")
 
         total_tracks = len(spotify_tracks)
-        await queue.put({
-            "type": "info",
-            "message": f"Found {total_tracks} tracks. Starting validation...",
-            "progress": 0,
-            "total": total_tracks
-        })
+        
+        # If validating, show starting validation message
+        if should_validate:
+             await queue.put({
+                "type": "info",
+                "message": f"Found {total_tracks} tracks. Starting validation...",
+                "progress": 0,
+                "total": total_tracks
+            })
+        else:
+            await queue.put({
+                "type": "info",
+                "message": f"Found {total_tracks} tracks. Processing...",
+                "progress": 0,
+                "total": total_tracks
+            })
         
         validated_tracks = []
         
@@ -43,19 +53,6 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str):
             title = fix_unicode(s_track.title)
             artist = fix_unicode(s_track.artist)
             album = fix_unicode(s_track.album) if s_track.album else None
-            
-            display_text = f"{artist} - {title}"
-            
-            await queue.put({
-                "type": "validating",
-                "message": f"Validating: {display_text}",
-                "progress": i,
-                "total": total_tracks,
-                "current_track": {
-                    "artist": artist,
-                    "title": title
-                }
-            })
             
             # Create a mutable object to hold results, similar to PlaylistTrack
             # We use a simple class or dict wrapper for compatibility with search_track_with_fallback
@@ -72,8 +69,22 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str):
             
             track_obj = TrackContainer()
             
-            # Perform search
-            await search_track_with_fallback(artist, title, track_obj)
+            if should_validate:
+                display_text = f"{artist} - {title}"
+                await queue.put({
+                    "type": "validating",
+                    "message": f"Validating: {display_text}",
+                    "progress": i,
+                    "total": total_tracks,
+                    "current_track": {
+                        "artist": artist,
+                        "title": title
+                    }
+                })
+                # Perform search
+                await search_track_with_fallback(artist, title, track_obj)
+                # Small delay to prevent rate limit hammering (internal queue)
+                await asyncio.sleep(0.05)
             
             validated_tracks.append({
                 "title": track_obj.title,
@@ -86,15 +97,12 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str):
                 "cover": track_obj.cover,
                 "db_id": s_track.spotify_id # Keep original ID for reference
             })
-            
-            # Small delay to prevent rate limit hammering (internal queue)
-            await asyncio.sleep(0.05)
 
         found_count = sum(1 for t in validated_tracks if t["tidal_exists"])
         
         await queue.put({
             "type": "complete",
-            "message": f"Process complete: {found_count}/{total_tracks} matched on Tidal",
+            "message": f"Process complete: {found_count}/{total_tracks} matched on Tidal" if should_validate else f"Fetched {total_tracks} from Spotify",
             "progress": total_tracks,
             "total": total_tracks,
             "tracks": validated_tracks,

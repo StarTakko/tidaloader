@@ -4,9 +4,9 @@ export const releaseNotes = [
         date: "2025-12-20",
         title: "Spotify Playlist Integration",
         changes: [
-            "Introduced native support for Spotify playlist URLs, enabling direct import without API credentials.",
+            "Introduced native support for Spotify playlist URLs with an interactive 'Fetch then Check' workflow.",
             "Implemented guest token extraction to bypass the 100-track limit for public playlists.",
-            "Added a dedicated Spotify Playlists tab for streamlined access and downloads.",
+            "Added a dedicated Spotify Playlists tab with bulk validation and advanced selection tools.",
             "Enhanced track matching algorithm with Romaji fallback for improved accuracy on Japanese titles."
         ]
     },

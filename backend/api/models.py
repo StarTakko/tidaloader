@@ -22,6 +22,7 @@ class ListenBrainzGenerateRequest(BaseModel):
 
 class SpotifyGenerateRequest(BaseModel):
     playlist_url: str
+    should_validate: bool = False
 
 class ValidateTrackRequest(BaseModel):
     track: PlaylistTrack

@@ -196,9 +196,10 @@ class ApiClient {
     /**
      * Generate Spotify playlist
      */
-    generateSpotifyPlaylist(playlistUrl) {
+    generateSpotifyPlaylist(playlistUrl, shouldValidate = false) {
         return this.post("/spotify/generate", {
-            playlist_url: playlistUrl
+            playlist_url: playlistUrl,
+            should_validate: shouldValidate
         });
     }
 

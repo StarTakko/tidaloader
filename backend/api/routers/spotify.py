@@ -43,7 +43,8 @@ async def generate_spotify_playlist(
     background_tasks.add_task(
         process_spotify_playlist,
         playlist_id,
-        progress_id
+        progress_id,
+        request.should_validate
     )
     
     return {"progress_id": progress_id}
