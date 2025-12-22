@@ -1,33 +1,116 @@
-<h1 align="center"> Tidaloader </h1>
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/RayZ3R0/tidaloader/main/frontend/src/assets/tsunami.svg" width="80" height="80" alt="Tidaloader Logo">
+  <br>
+  Tidaloader
+</h1>
 
 <p align="center">
-  <!-- Key Stats -->
+  <strong>A modern, self-hosted web application for downloading high-quality music from Tidal</strong>
+</p>
+
+<p align="center">
   <a href="https://hub.docker.com/repository/docker/rayz3r0/tidaloader/"><img src="https://img.shields.io/badge/docker-package-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Package"></a>
   <a href="https://github.com/RayZ3R0/tidaloader/blob/main/LICENSE"><img src="https://img.shields.io/github/license/RayZ3R0/tidaloader?style=flat-square&color=5D6D7E" alt="License"></a>
   <a href="https://github.com/RayZ3R0/tidaloader/stargazers"><img src="https://img.shields.io/github/stars/RayZ3R0/tidaloader?style=flat-square&color=E67E22" alt="Stars"></a>
   <a href="https://github.com/RayZ3R0/tidaloader/commits/main"><img src="https://img.shields.io/github/last-commit/RayZ3R0/tidaloader?style=flat-square&color=5D6D7E" alt="Last Commit"></a>
-  
   <br>
-  
-  <!-- Tech Stack -->
   <img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Preact-673AB7?style=flat-square&logo=preact&logoColor=white" alt="Preact">
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
 </p>
 
-A full-stack web application for downloading high-quality music from Tidal with intelligent playlist generation via ListenBrainz integration. Features automatic metadata tagging, lyrics fetching, and organized file management.
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#screenshots">Screenshots</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#configuration">Configuration</a> •
+  <a href="#manual-installation">Manual Installation</a>
+</p>
 
-Heavily inspired from https://github.com/uimaxbai/tidal-ui and using https://github.com/sachinsenal0x64/hifi
+---
 
-> [!IMPORTANT]
->
-> # Project Terms
+## Features
 
-- We do not encourage piracy. This project is made purely for educational and personal use.
-  If you somehow download copyrighted content, you are solely responsible for complying with the relevant laws in your country.
+### Multi-Format Audio Downloads
 
-- The Tidaloader Project assumes no responsibility for any misuse or legal violations arising from the use of this project.
+| Format | Quality | Details |
+|--------|---------|---------|
+| FLAC Hi-Res | Up to 24-bit/192kHz | Studio master quality |
+| FLAC Lossless | 16-bit/44.1kHz | CD quality |
+| Opus | 192kbps VBR | High-efficiency codec |
+| MP3 | 256/128 kbps | Universal compatibility |
+| AAC | 320/96 kbps | Native Tidal format |
 
-- This project does not claim ownership of any music or audio content. All rights remain with their respective copyright holders. Users are **encouraged** to support artists and rights owners by maintaining a valid Tidal subscription. Tidaloader serves solely as a downloading interface for personal, non-commercial use.
+### Comprehensive Search
+
+- **Track Search** — Find individual songs with album art and quality indicators
+- **Album Search** — Browse complete albums with track counts and release dates
+- **Artist Search** — Explore artist discographies with all albums and EPs
+- **Playlist Search** — Discover and download public Tidal playlists
+- **Direct URL Support** — Paste Tidal playlist URLs or UUIDs directly in search
+
+### Playlist Integrations
+
+**Spotify Playlists**
+- Import any public Spotify playlist via URL
+- No 100-track limit — fetches entire playlists using SpotAPI
+- Interactive "Fetch → Check → Download" workflow
+- Generate `.m3u8` files for Navidrome/Jellyfin/Plex compatibility
+- Batch validate and selectively queue tracks
+
+**ListenBrainz Playlists**
+- Weekly Jams — Personalized weekly recommendations
+- Weekly Exploration — Discover new artists from your listening history
+- Year in Review: Discoveries — Your top new finds of the year
+- Year in Review: Missed — Popular tracks you might have missed
+- Smart Tidal matching with Japanese Romaji title fallback
+
+**Monitored Tidal Playlists**
+- Subscribe to any Tidal playlist for automatic syncing
+- Set sync frequency: Manual, Daily, Weekly, or Monthly
+- Auto-generates `.m3u8` files in your music directory
+- Delete downloaded files directly from the UI with safety confirmations
+
+### Local Library Management
+
+- Artist-centric browsing — View your downloaded music organized by artist
+- Auto-fetched cover art — Artist pictures loaded from Tidal and cached
+- Album/track counts — Quick stats for each artist
+- Library scanning — Rescan to detect manual file changes
+
+### Theme Support
+
+Over 20 themes available including Catppuccin (Latte, Frappé, Macchiato, Mocha), Nord, Gruvbox, Dracula, Solarized, Rose Pine, Tokyo Night, One Dark, Everforest, Kanagawa, and more. Quick toggle between light and dark modes with recent themes for fast access.
+
+### Advanced Features
+
+**Rich Metadata Tagging**
+- MusicBrainz IDs embedded automatically
+- Album artist, track number, release year
+- High-quality cover art (up to 1280×1280)
+- Organized file structure: `Artist/Album/TrackNumber - Title`
+
+**Lyrics Support**
+- Synced lyrics (`.lrc`) via LrcLib
+- Plain text lyrics fallback
+- Optional FFmpeg-based embedding into audio files
+
+**Beets Integration**
+- Optional post-download `beet import` execution
+- Custom Tidaloader beets config included
+
+**Queue Management**
+- Concurrent downloads (configurable limit)
+- Auto-retry on failure
+- Persistent queue across restarts
+- Real-time progress indicators
+
+### Mobile Responsive
+
+Fully responsive design that works on phones, tablets, and desktops with touch-friendly controls and adaptive layouts.
+
+---
 
 ## Screenshots
 
@@ -39,139 +122,192 @@ Heavily inspired from https://github.com/uimaxbai/tidal-ui and using https://git
   <img src="https://i.imgur.com/JrBzovz.png" width="90%" alt="Download Management">
 </p>
 
-## Key Features
+---
 
-- **Multi-Format Support**:
-  - **FLAC**: Hi-Res (24-bit/192kHz) & Lossless (16-bit/44.1kHz)
-  - **Opus**: High-efficiency 192kbps VBR
-  - **MP3**: 320kbps / 128kbps (Transcoded)
-  - **AAC**: 320kbps / 96kbps
-- **Smart Playlists**: Generate "Daily Jams" using ListenBrainz history.
-- **Rich Metadata**: Auto-tagging with MusicBrainz IDs, Artist/Album organization, and embedded covers.
-- **Intelligent Library**: Strict ID-based album matching prevents duplicates. Artist covers are automatically fetched and cached for a beautiful, persistent browsing experience.
-- **Lyrics**: Synced (`.lrc`) and plain text lyrics via LrcLib.
-- **Queue Management**: Concurrent downloads, auto-retry, and persistence.
-- **Resilience**: Automatic rotation of Tidal API tokens and endpoints.
+## Quick Start
 
-## Quick Start (Docker)
+### Docker (Recommended)
 
-The recommended way to run Tidaloader.
+1. **Create a `docker-compose.yml`:**
 
-1.  Create a `docker-compose.yml`:
+```yaml
+services:
+  tidaloader:
+    image: ghcr.io/rayz3r0/tidaloader:latest
+    container_name: tidaloader
+    ports:
+      - "8001:8001"
+    environment:
+      - MUSIC_DIR=/music
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=changeme
+      - MAX_CONCURRENT_DOWNLOADS=3
+      - QUEUE_AUTO_PROCESS=true
+    volumes:
+      - ./music:/music
+    restart: unless-stopped
+```
 
-    ```yaml
-    version: '3.8'
-    services:
-      tidaloader:
-        image: ghcr.io/rayz3r0/tidaloader:latest
-        container_name: tidaloader
-        ports:
-          - "8001:8001"
-        environment:
-          - MUSIC_DIR=/music
-          - AUTH_USERNAME=admin
-          - AUTH_PASSWORD=changeme
-          - MAX_CONCURRENT_DOWNLOADS=3
-          - QUEUE_AUTO_PROCESS=true
-        volumes:
-          - ./music:/music
-        restart: unless-stopped
-    ```
+2. **Start the container:**
+```bash
+docker compose up -d
+```
 
-2.  Run the container:
-    ```bash
-    docker-compose up -d
-    ```
+3. **Open in browser:** `http://localhost:8001`
 
-3.  Open `http://localhost:8001`.
+---
 
-## Configuration Options
+## Configuration
 
-Configure these in your `docker-compose.yml` or `.env` file.
+### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MUSIC_DIR` | Internal container path for downloads | `/music` |
-| `AUTH_USERNAME` | Web UI Username | `admin` |
-| `AUTH_PASSWORD` | Web UI Password | `changeme` |
-| `MAX_CONCURRENT_DOWNLOADS` | Max parallel downloads | `3` |
-| `QUEUE_AUTO_PROCESS` | Start queue automatically on boot | `true` |
-| `MUSIC_DIR_HOST` | (Docker) Host directory to map | `./music` |
+| `MUSIC_DIR` | Directory for downloaded music inside container | `/music` |
+| `AUTH_USERNAME` | Web UI username | `admin` |
+| `AUTH_PASSWORD` | Web UI password | `changeme` |
+| `MAX_CONCURRENT_DOWNLOADS` | Parallel download limit | `3` |
+| `QUEUE_AUTO_PROCESS` | Auto-start queue on boot | `true` |
+| `PLAYLISTS_DIR` | Directory for playlist `.m3u8` files | `/music/Playlists` |
 
-## Audio Quality Guide
+### Audio Quality Settings
 
-| Quality Setting | Details | Format |
-|-----------------|---------|--------|
-| `HI_RES` | Source quality (up to 24-bit/192kHz) | FLAC |
-| `LOSSLESS` | CD quality (16-bit/44.1kHz) | FLAC |
-| `HIGH` | Standard High (320kbps) | AAC |
-| `LOW` | Data Saver (96kbps) | AAC |
-| `MP3_320`/`256` | Transcoded High Quality | MP3 |
-| `OPUS_192` | Transcoded High Efficiency | Opus |
+Configure in the Settings panel:
+
+| Setting | Output Format | Best For |
+|---------|---------------|----------|
+| Hi-Res FLAC | FLAC 24-bit/192kHz | Audiophile systems |
+| FLAC Lossless | FLAC 16-bit/44.1kHz | High-quality archival |
+| MP3 256kbps | MP3 | Universal compatibility |
+| MP3 128kbps | MP3 | Storage efficiency |
+| Opus 192kbps | Opus | Modern players, small size |
+| AAC 320kbps | AAC | Mobile devices |
+| AAC 96kbps | AAC | Streaming/low bandwidth |
+
+### File Organization Templates
+
+Customize your folder structure:
+- `{Artist}/{Album}/{TrackNumber} - {Title}` (Default)
+- `{Album}/{TrackNumber} - {Title}`
+- `{Artist} - {Title}`
+- Custom templates supported
+
+### Optional Features
+
+| Feature | Description |
+|---------|-------------|
+| Group Compilations | Places "Various Artists" albums in a Compilations folder |
+| Beets Integration | Runs `beet import` after each download |
+| Embed Lyrics | Uses FFmpeg to embed lyrics into audio files |
+
+---
 
 ## Manual Installation
 
 <details>
 <summary><strong>Windows</strong></summary>
 
-1.  **Clone**: `git clone https://github.com/RayZ3R0/tidaloader.git`
-2.  **Backend**:
-    ```powershell
-    cd backend
-    python -m venv venv; .\venv\Scripts\Activate.ps1
-    pip install -r requirements.txt
-    cp .env.example .env  # Edit .env with your settings
-    ```
-3.  **Frontend**:
-    ```powershell
-    cd ..\frontend
-    npm install; npm run build
-    ```
-4.  **Run**: `cd ..\backend; .\start.ps1`
+```powershell
+# Clone the repository
+git clone https://github.com/RayZ3R0/tidaloader.git
+cd tidaloader
+
+# Set up the backend
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your settings
+
+# Build the frontend
+cd ..\frontend
+npm install
+npm run build
+
+# Run the server
+cd ..\backend
+.\start.ps1
+```
 </details>
 
 <details>
-<summary><strong>Linux</strong></summary>
+<summary><strong>Linux / macOS</strong></summary>
 
-1.  **Clone**: `git clone https://github.com/RayZ3R0/tidaloader.git`
-2.  **Backend**:
-    ```bash
-    cd backend
-    python3 -m venv venv; source venv/bin/activate
-    pip install -r requirements.txt
-    cp .env.example .env  # Edit .env
-    ```
-3.  **Frontend**:
-    ```bash
-    cd ../frontend
-    npm install; npm run build
-    ```
-4.  **Run**: `python -m uvicorn api.main:app --host 0.0.0.0 --port 8001`
+```bash
+# Clone the repository
+git clone https://github.com/RayZ3R0/tidaloader.git
+cd tidaloader
+
+# Set up the backend
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your settings
+
+# Build the frontend
+cd ../frontend
+npm install
+npm run build
+
+# Run the server
+cd ../backend
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8001
+```
 </details>
 
 <details>
 <summary><strong>Android (Termux)</strong></summary>
 
-1.  Install Termux (F-Droid).
-2.  Run Setup:
-    ```bash
-    curl -O https://raw.githubusercontent.com/RayZ3R0/tidaloader/main/backend/termux-setup.sh
-    bash termux-setup.sh
-    ```
-3.  Start: `./start-service.sh`
+```bash
+# Install Termux from F-Droid (not Play Store)
+
+# Run the setup script
+curl -O https://raw.githubusercontent.com/RayZ3R0/tidaloader/main/backend/termux-setup.sh
+bash termux-setup.sh
+
+# Start the server
+./start-service.sh
+```
 </details>
+
+---
 
 ## Development
 
-*   **Backend**: `uvicorn api.main:app --reload` (Port 8001)
-*   **Frontend**: `npm run dev` (Port 5173)
+| Component | Command | Port |
+|-----------|---------|------|
+| Backend | `uvicorn api.main:app --reload` | 8001 |
+| Frontend | `npm run dev` | 5173 |
+
+---
 
 ## Credits
 
-Inspired by [tidal-ui](https://github.com/uimaxbai/tidal-ui). Playlist generation by ListenBrainz.
+- Inspired by [tidal-ui](https://github.com/uimaxbai/tidal-ui) and [hifi](https://github.com/sachinsenal0x64/hifi)
+- Playlist generation powered by [ListenBrainz](https://listenbrainz.org)
+- Spotify integration via [SpotAPI](https://github.com/Blastomanie/SpotAPI)
+- Lyrics provided by [LrcLib](https://lrclib.net)
+- Themes inspired by [Catppuccin](https://github.com/catppuccin/catppuccin)
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
-> **Disclaimer**: This project is for educational purposes only. The developers do not endorse piracy and are not responsible for how this software is used. Please support artists by purchasing their music.
+---
+
+> [!IMPORTANT]
+> **Disclaimer**
+>
+> This project is intended for educational and personal use only. The developers do not encourage or endorse piracy.
+>
+> - Users are solely responsible for complying with copyright laws in their jurisdiction.
+> - All music rights remain with their respective copyright holders.
+> - Users are encouraged to support artists by maintaining a valid Tidal subscription.
+> - This tool serves as a downloading interface for personal, non-commercial use.
+>
+> The Tidaloader Project assumes no responsibility for any misuse or legal violations.
