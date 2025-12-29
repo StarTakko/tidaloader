@@ -404,6 +404,19 @@ class PlaylistManager:
         except Exception as e:
            logger.warning(f"Failed to ensure playlist cover: {e}")
 
+        # 6. Jellyfin Sync (Refresh & Upload Cover)
+        if settings.jellyfin_url and settings.jellyfin_api_key:
+            try:
+                # Trigger Scan so Jellyfin sees the new m3u8
+                jellyfin_client.refresh_library()
+                
+                # Attempt upload with extended wait (for scan to finish)
+                cover_path = playlist_folder / f"{safe_name}.jpg"
+                if cover_path.exists():
+                    await self._sync_cover_to_jellyfin(playlist.name, cover_path, scan_wait=True)
+            except Exception as e:
+                logger.error(f"Jellyfin Sync Sequence Failed: {e}")
+
         # Update last sync
         playlist.last_sync = datetime.now().isoformat()
         playlist.track_count = len(raw_items)
@@ -530,13 +543,12 @@ class PlaylistManager:
                  
                  cover_bytes = generator.generate_cover(title, subtitle)
                  
-                 if cover_bytes:
+                     if cover_bytes:
                      async with aiofiles.open(cover_path, 'wb') as f:
                          await f.write(cover_bytes)
                      logger.info(f"Generated & Saved cover: {cover_path}")
                      
-                     # Sync to Jellyfin
-                     await self._sync_cover_to_jellyfin(playlist.name, cover_path)
+                     # Sync deferred to main process
                  else:
                      logger.warning("Failed to generate cover bytes (returned None)")
 
@@ -585,8 +597,7 @@ class PlaylistManager:
                                 await f.write(await resp.read())
                             logger.info(f"Cover saved: {cover_path}")
                             
-                            # Sync to Jellyfin
-                            await self._sync_cover_to_jellyfin(playlist.name, cover_path)
+                            # Sync deferred to main process
                         else:
                             logger.warning(f"Failed cover download: {resp.status} from {image_url}")
             except Exception as e:
