@@ -543,7 +543,7 @@ class PlaylistManager:
                  
                  cover_bytes = generator.generate_cover(title, subtitle)
                  
-                     if cover_bytes:
+                 if cover_bytes:
                      async with aiofiles.open(cover_path, 'wb') as f:
                          await f.write(cover_bytes)
                      logger.info(f"Generated & Saved cover: {cover_path}")
