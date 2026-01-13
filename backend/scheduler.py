@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from api.constants import SyncFrequency, PlaylistSource
 from playlist_manager import playlist_manager
 from api.settings import settings
 
@@ -60,98 +61,79 @@ class PlaylistScheduler:
         logger.info("Running scheduled playlist update check...")
         playlists = playlist_manager.get_monitored_playlists()
         
+        now = datetime.now()
+
         for p in playlists:
             uuid = p['uuid']
             name = p['name']
-            frequency = p.get('sync_frequency', 'manual')
+            
+            # Use MonitoredPlaylist object wrapper if dict is returned, or just access dict
+            # playlist_manager returns dicts from get_monitored_playlists
+            # Let's use the logic directly on the dict to match existing pattern, but use constants
+            
+            frequency = p.get('sync_frequency', SyncFrequency.MANUAL)
             last_sync_str = p.get('last_sync')
+            source = p.get('source', PlaylistSource.TIDAL)
             
-            if frequency == 'manual':
-                continue
-                
-            should_sync = False
-            
-            # Logic: 
-            # - 'daily': sync every time scheduler runs (once a day)
-            # - 'weekly': sync if it's Monday (ListenBrainz Weekly Jams usually out on Mon)
-            # - 'yearly': sync if it's January 1st
-            
-            now = datetime.now()
-            
-            if frequency == 'daily':
-                # Sync if > 1 day elapsed or never synced
-                if not last_sync_str:
-                    should_sync = True
-                else:
-                    try:
-                        last_sync = datetime.strptime(last_sync_str, "%Y-%m-%d")
-                        if (now - last_sync).days >= 1:
-                            should_sync = True
-                    except ValueError:
-                        should_sync = True
-
-            elif frequency == 'weekly':
-                # Differentiate based on source
-                source = p.get('source', '')
-                is_listenbrainz = (source == 'listenbrainz')
-                
-                # If ListenBrainz: Prefer Tuesday (weekday=1)
-                # Others: Strict 7 days
-                
-                if not last_sync_str:
-                    should_sync = True
-                else:
-                    try:
-                        last_sync = datetime.strptime(last_sync_str, "%Y-%m-%d")
-                        days_diff = (now - last_sync).days
-                        
-                        if days_diff >= 7:
-                            should_sync = True
-                        elif is_listenbrainz and (now.weekday() == 1) and days_diff >= 1 and last_sync.date() != now.date():
-                             # It's Tuesday, it's ListenBrainz, and we haven't synced today
-                             should_sync = True
-                    except ValueError:
-                        should_sync = True
-
-            elif frequency == 'monthly':
-                # Sync if > 30 days elapsed OR moved to next month (roughly)
-                # Let's say: Sync on the 1st of month OR if > 30 days
-                
-                if not last_sync_str:
-                    should_sync = True
-                else:
-                    try:
-                        last_sync = datetime.strptime(last_sync_str, "%Y-%m-%d")
-                        days_diff = (now - last_sync).days
-                        
-                        if days_diff >= 30:
-                            should_sync = True
-                        elif now.day == 1 and last_sync.month != now.month:
-                             should_sync = True
-                    except ValueError:
-                        should_sync = True
-
-            elif frequency == 'yearly':
-                # Sync if > 365 days elapsed OR Jan 1st
-                is_jan_first = (now.month == 1 and now.day == 1)
-                
-                if not last_sync_str:
-                    should_sync = True
-                else:
-                    try:
-                        last_sync = datetime.strptime(last_sync_str, "%Y-%m-%d")
-                        if (now - last_sync).days >= 365:
-                            should_sync = True
-                        elif is_jan_first and last_sync.date() != now.date():
-                            should_sync = True
-                    except ValueError:
-                        should_sync = True
+            should_sync, reason = self._should_sync(frequency, last_sync_str, source, now)
             
             if should_sync:
-                logger.info(f"Triggering scheduled sync for playlist: {name} (Freq: {frequency}, Last: {last_sync_str})")
+                logger.info(f"Triggering scheduled sync for playlist: {name} (Reason: {reason})")
                 try:
                     await playlist_manager.sync_playlist(uuid)
                 except Exception as e:
                     logger.error(f"Scheduled sync failed for {name}: {e}")
             else:
-                 logger.debug(f"Skipping sync for {name} (Freq: {frequency}, Last: {last_sync_str})")
+                 logger.debug(f"Skipping sync for {name} (Reason: {reason})")
+
+    def _should_sync(self, frequency: str, last_sync_str: str, source: str, now: datetime) -> tuple[bool, str]:
+        if frequency == SyncFrequency.MANUAL:
+            return False, "Manual frequency"
+            
+        if not last_sync_str:
+            return True, "Never synced"
+            
+        try:
+            last_sync_date = datetime.strptime(last_sync_str, "%Y-%m-%d").date()
+        except ValueError:
+            return True, "Invalid last_sync date format"
+            
+        today = now.date()
+        days_diff = (today - last_sync_date).days
+        
+        if frequency == SyncFrequency.DAILY:
+            if days_diff >= 1:
+                return True, f"Daily interval passed ({days_diff} days)"
+                
+        elif frequency == SyncFrequency.WEEKLY:
+            # 1. Robust Backup: > 7 days
+            if days_diff >= 7:
+                return True, f"Weekly backup interval passed ({days_diff} days)"
+            
+            # 2. Preferred Day for ListenBrainz: Tuesday
+            if source == PlaylistSource.LISTENBRAINZ:
+                # Tuesday is weekday 1
+                is_tuesday = (now.weekday() == 1)
+                if is_tuesday and today != last_sync_date:
+                    return True, "Tuesday preference for ListenBrainz"
+
+        elif frequency == SyncFrequency.MONTHLY:
+            # 1. Robust Backup: > 30 days
+            if days_diff >= 30:
+                return True, f"Monthly backup interval passed ({days_diff} days)"
+            
+            # 2. Preferred Day: 1st of month
+            if now.day == 1 and today != last_sync_date:
+                return True, "1st of month preference"
+
+        elif frequency == SyncFrequency.YEARLY:
+            # 1. Robust Backup: > 365 days
+            if days_diff >= 365:
+                return True, f"Yearly interval passed ({days_diff} days)"
+            
+            # 2. Preferred Day: Jan 1st
+            is_jan_first = (now.month == 1 and now.day == 1)
+            if is_jan_first and today != last_sync_date:
+                return True, "Jan 1st preference"
+                
+        return False, "No condition met"

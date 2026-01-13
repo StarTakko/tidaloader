@@ -9,6 +9,8 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 import aiofiles
 
+from api.constants import SyncFrequency, PlaylistSource, AudioQuality
+
 from api.settings import settings, DOWNLOAD_DIR, PLAYLISTS_DIR
 from api.clients import tidal_client
 from api.clients.jellyfin_client import jellyfin_client
@@ -77,8 +79,21 @@ class PlaylistManager:
     def get_playlist(self, uuid: str) -> Optional[MonitoredPlaylist]:
         return next((p for p in self._playlists if p.uuid == uuid), None)
 
-    def add_monitored_playlist(self, uuid: str, name: str, frequency: str = "manual", quality: str = "LOSSLESS", source: str = "tidal", extra_config: Dict = None, use_playlist_folder: bool = False) -> tuple[MonitoredPlaylist, bool]:
+    def add_monitored_playlist(self, uuid: str, name: str, frequency: str = SyncFrequency.MANUAL, quality: str = AudioQuality.LOSSLESS, source: str = PlaylistSource.TIDAL, extra_config: Dict = None, use_playlist_folder: bool = False) -> tuple[MonitoredPlaylist, bool]:
         logger.info(f"Adding/Updating playlist: {uuid} - {name} (Freq: {frequency}, Qual: {quality}, Source: {source}, Folder: {use_playlist_folder})")
+        
+        # Enforce Strict Frequency Rules for ListenBrainz
+        if source == PlaylistSource.LISTENBRAINZ and extra_config:
+            lb_type = extra_config.get('lb_type')
+            if lb_type in ['weekly-jams', 'weekly-exploration']:
+                if frequency != SyncFrequency.WEEKLY:
+                    logger.info(f"Enforcing STRICT rule: {name} ({lb_type}) must be WEEKLY.")
+                    frequency = SyncFrequency.WEEKLY
+            elif lb_type in ['year-in-review-discoveries', 'year-in-review-missed']:
+                 if frequency != SyncFrequency.MANUAL:
+                     logger.info(f"Enforcing STRICT rule: {name} ({lb_type}) must be MANUAL.")
+                     frequency = SyncFrequency.MANUAL
+
         # Check if exists
         existing = self.get_playlist(uuid)
         if existing:
