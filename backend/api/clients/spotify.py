@@ -17,6 +17,14 @@ class SpotifyTrack:
     duration_ms: Optional[int] = None
     spotify_id: Optional[str] = None
 
+@dataclass
+class SpotifyPlaylist:
+    id: str
+    name: str
+    owner: str
+    image: Optional[str] = None
+    track_count: int = 0
+
 class SpotifyClient:
     """
     Client for accessing Spotify playlist data without user credentials.
@@ -107,3 +115,68 @@ class SpotifyClient:
         except Exception as e:
             logger.error(f"Failed to fetch playlist: {e}")
             return [], False
+
+    def _search_playlists_sync(self, query: str, limit: int = 10) -> List[SpotifyPlaylist]:
+        """
+        Synchronous method to search for playlists.
+        Uses spotapi.song.Song.query_songs manually to extract playlist results.
+        """
+        try:
+            # Import internals here to avoid top-level issues if layout changes
+            from spotapi.public import client_pool
+            from spotapi.song import Song
+            
+            client = client_pool.get()
+            try:
+                song_api = Song(client=client)
+                # query_songs returns the raw response dict
+                response = song_api.query_songs(query, limit=limit)
+                
+                playlists = []
+                if "data" in response and "searchV2" in response["data"]:
+                    data = response["data"]["searchV2"]
+                    if "playlists" in data and "items" in data["playlists"]:
+                        items = data["playlists"]["items"]
+                        for item in items:
+                            p_data = item.get("data", {})
+                            uri = p_data.get("uri", "")
+                            
+                            # Extract ID from spotify:playlist:ID
+                            p_id = uri.split(":")[-1] if uri else ""
+                            
+                            # Extract image
+                            images = p_data.get("images", {}).get("items", [])
+                            image_url = None
+                            if images:
+                                # Prioritize 300x300 or similar, mostly sources[0] is best
+                                sources = images[0].get("sources", [])
+                                if sources:
+                                    image_url = sources[0].get("url")
+                                    
+                            # Owner
+                            owner_data = p_data.get("ownerV2", {}).get("data", {})
+                            owner_name = owner_data.get("name", "Unknown")
+                            
+                            playlists.append(SpotifyPlaylist(
+                                id=p_id,
+                                name=p_data.get("name", "Unknown"),
+                                owner=owner_name,
+                                image=image_url,
+                                track_count=0 # Not readily available in search summary usually
+                            ))
+                            
+                return playlists
+            finally:
+                client_pool.put(client)
+                
+        except Exception as e:
+            logger.error(f"Error searching spotify playlists: {e}")
+            return []
+
+    async def search_playlists(self, query: str) -> List[SpotifyPlaylist]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            self._search_playlists_sync,
+            query
+        )

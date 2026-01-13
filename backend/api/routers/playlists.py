@@ -16,7 +16,7 @@ class MonitorPlaylistRequest(BaseModel):
     name: str # Name to be used for the playlist file/display
     frequency: Literal["manual", "daily", "weekly", "monthly", "yearly"] = "manual"
     quality: Literal["LOW", "HIGH", "LOSSLESS", "HI_RES"] = "LOSSLESS"
-    source: Literal["tidal", "listenbrainz"] = "tidal"
+    source: Literal["tidal", "listenbrainz", "spotify"] = "tidal"
     extra_config: Optional[Dict[str, Any]] = None
     use_playlist_folder: bool = False
 

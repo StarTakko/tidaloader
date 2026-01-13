@@ -176,8 +176,10 @@ class PlaylistManager:
         raw_items = []
         
         # 1. Fetch tracks based on source
-        if playlist.source == 'listenbrainz':
+        if playlist.source == PlaylistSource.LISTENBRAINZ:
             raw_items = await self._fetch_listenbrainz_items(playlist)
+        elif playlist.source == PlaylistSource.SPOTIFY:
+            raw_items = await self._fetch_spotify_items(playlist)
         else:
             raw_items = await self._fetch_tidal_items(playlist)
             
@@ -262,6 +264,55 @@ class PlaylistManager:
             
         except Exception as e:
             logger.error(f"Failed to fetch ListenBrainz tracks: {e}")
+            return []
+
+    async def _fetch_spotify_items(self, playlist: MonitoredPlaylist) -> List[Dict]:
+        """
+        Fetch items from Spotify using the Spotify Service.
+        """
+        try:
+            from api.services.spotify import fetch_and_validate_spotify_playlist
+            
+            # Helper to log progress for background tasks
+            async def progress_logger(data):
+                 if data.get('type') in ['info', 'complete']:
+                    logger.info(f"[Spotify-Sync] {data.get('message')}")
+
+            # 'extra_config' should contain 'spotify_id' or we use playlist.uuid if that's where we stored it
+            # The MonitorPlaylistRequest uses 'uuid' for the Spotify ID usually?
+            # Let's assume playlist.uuid IS the Spotify ID for now, or check extra_config
+            spotify_id = playlist.uuid
+            if playlist.extra_config and 'spotify_id' in playlist.extra_config:
+                spotify_id = playlist.extra_config['spotify_id']
+            
+            tracks = await fetch_and_validate_spotify_playlist(
+                spotify_id=spotify_id,
+                progress_callback=progress_logger,
+                validate=True
+            )
+            
+            # Normalize to match "Tidal Item" structure
+            normalized = []
+            for t in tracks:
+                if not t.get('tidal_exists') or not t.get('tidal_id'):
+                    continue
+                    
+                normalized.append({
+                    'item': {
+                        'id': int(t['tidal_id']) if str(t['tidal_id']).isdigit() else t['tidal_id'],
+                        'title': t['title'],
+                        'artist': {'name': t['artist'], 'id': t.get('tidal_artist_id')},
+                        'album': {'title': t.get('album', 'Unknown Album'), 'id': t.get('tidal_album_id'), 'cover': t.get('cover')},
+                        'trackNumber': t.get('track_number'),
+                        'duration': -1
+                    }
+                })
+            
+            logger.info(f"Spotify Sync: Normalized {len(normalized)} tracks (Matched)")
+            return normalized
+
+        except Exception as e:
+            logger.error(f"Failed to fetch Spotify tracks: {e}")
             return []
 
     async def _process_playlist_items(self, playlist: MonitoredPlaylist, raw_items: List[Dict]) -> Dict[str, Any]:

@@ -15,6 +15,24 @@ from api.services.spotify import process_spotify_playlist, generate_spotify_m3u8
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+from api.clients.spotify import SpotifyClient
+
+@router.get("/api/spotify/search")
+async def search_spotify_playlists(
+    query: str,
+    user: str = Depends(require_auth)
+):
+    """Search for Spotify playlists"""
+    client = SpotifyClient()
+    try:
+        playlists = await client.search_playlists(query)
+        return {"items": playlists}
+    except Exception as e:
+        logger.error(f"Search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await client.close()
+
 def extract_spotify_id(url: str) -> str:
     # Match playlist ID from various formats
     # https://open.spotify.com/playlist/37i9dQZF1DX5Ejj077clxu
