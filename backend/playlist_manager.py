@@ -750,7 +750,7 @@ class PlaylistManager:
         success_count = 0
         skipped_count = 0
         
-        for uuid, playlist in self.playlists.items():
+        for playlist in self._playlists:
             try:
                 safe_name = sanitize_path_component(playlist.name)
                 # Logic matches _process_playlist_items: m3u8 and cover are constantly in PLAYLISTS_DIR/{safe_name}
