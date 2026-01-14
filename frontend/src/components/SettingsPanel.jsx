@@ -1,6 +1,7 @@
 import { h } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import { useDownloadStore } from "../stores/downloadStore";
+import { api } from "../api/client";
 
 const QUALITY_OPTIONS = [
     { value: "HI_RES_LOSSLESS", label: "Hi-Res FLAC", description: "Up to 24-bit/192kHz" },
