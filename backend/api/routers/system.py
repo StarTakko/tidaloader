@@ -152,7 +152,7 @@ async def get_jellyfin_user_image(user_id: str):
 @router.post("/api/system/jellyfin/sync-covers")
 async def sync_jellyfin_covers(background_tasks: BackgroundTasks):
     # Late import to avoid circular dependency if system imported by scheduler/playlist_manager
-    from api.playlist_manager import playlist_manager
+    from playlist_manager import playlist_manager
     
     background_tasks.add_task(playlist_manager.force_sync_covers)
     return {"status": "started", "message": "Global cover sync started in background"}
