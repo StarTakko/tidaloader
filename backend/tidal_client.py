@@ -36,6 +36,43 @@ class TidalAPIClient:
         self.success_history = {}
         self.download_status_cache = {}
     
+    def _check_endpoint_connection(self, url: str, timeout: int = 5) -> bool:
+        """
+        Check if an endpoint is reachable before adding it to the list.
+        
+        Args:
+            url: The endpoint URL to check
+            timeout: Connection timeout in seconds
+            
+        Returns:
+            True if endpoint is reachable, False otherwise
+        """
+        try:
+            # Try a simple HEAD request first (lighter than GET)
+            response = requests.head(url, timeout=timeout, allow_redirects=True)
+            if response.status_code < 500:  # Accept anything except server errors
+                logger.debug(f"✓ Endpoint {url} is reachable (HEAD returned {response.status_code})")
+                return True
+            
+            # If HEAD fails, try GET as fallback
+            response = requests.get(url, timeout=timeout)
+            if response.status_code < 500:
+                logger.debug(f"✓ Endpoint {url} is reachable (GET returned {response.status_code})")
+                return True
+            
+            logger.warning(f"✗ Endpoint {url} returned server error {response.status_code}")
+            return False
+            
+        except requests.exceptions.Timeout:
+            logger.warning(f"✗ Endpoint {url} timed out after {timeout}s")
+            return False
+        except requests.exceptions.ConnectionError:
+            logger.warning(f"✗ Endpoint {url} connection failed")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"✗ Endpoint {url} check failed: {e}")
+            return False
+    
     def _fetch_endpoints_from_remote(self) -> Optional[List[Dict]]:
         try:
             logger.info(f"Fetching endpoints from {ENDPOINTS_URL}")
@@ -68,6 +105,10 @@ class TidalAPIClient:
 
                 url = url.rstrip('/')
                 
+                # Check connection before adding to list
+                if not self._check_endpoint_connection(url):
+                    logger.info(f"Skipping unreachable endpoint: {url}")
+                    continue
 
                 try:
                     hostname = url.replace('https://', '').replace('http://', '')
@@ -85,6 +126,7 @@ class TidalAPIClient:
 
             priority += 1
         
+        logger.info(f"Validated {len(endpoints)} reachable endpoints")
         return endpoints
     
     def _load_cached_endpoints(self) -> Optional[List[Dict]]:
