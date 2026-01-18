@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from api.constants import SyncFrequency, PlaylistSource
 from playlist_manager import playlist_manager
 from api.settings import settings
 
@@ -60,50 +61,83 @@ class PlaylistScheduler:
         logger.info("Running scheduled playlist update check...")
         playlists = playlist_manager.get_monitored_playlists()
         
+        now = datetime.now()
+
         for p in playlists:
             uuid = p['uuid']
             name = p['name']
-            frequency = p.get('sync_frequency', 'manual')
+            
+            # Use MonitoredPlaylist object wrapper if dict is returned, or just access dict
+            # playlist_manager returns dicts from get_monitored_playlists
+            # Let's use the logic directly on the dict to match existing pattern, but use constants
+            
+            frequency = p.get('sync_frequency', SyncFrequency.MANUAL)
             last_sync_str = p.get('last_sync')
+            source = p.get('source', PlaylistSource.TIDAL)
             
-            if frequency == 'manual':
-                continue
-                
-            should_sync = False
-            
-            # Logic: 
-            # - 'daily': sync every time scheduler runs (once a day)
-            # - 'weekly': sync if it's Monday (ListenBrainz Weekly Jams usually out on Mon)
-            # - 'yearly': sync if it's January 1st
-            
-            now = datetime.now()
-            
-            if frequency == 'daily':
-                should_sync = True
-            elif frequency == 'weekly':
-                # Sync on Mondays (weekday 0)
-                if now.weekday() == 0:
-                     # Check if already synced today to avoid redundant syncs if scheduler restarts
-                     if not last_sync_str or not last_sync_str.startswith(now.strftime("%Y-%m-%d")):
-                         should_sync = True
-            elif frequency == 'yearly':
-                # Sync on Jan 1st
-                if now.month == 1 and now.day == 1:
-                     if not last_sync_str or not last_sync_str.startswith(now.strftime("%Y-%m-%d")):
-                         should_sync = True
-            
-            # Legacy fallback: If standard intervals are needed, keep implementation or remove?
-            # The requirement specifically mentioned Monday/Jan 1 updates for this feature.
-            # Let's keep a fallback for manual "Monitored" legacy playlists that might just want "Every 7 days"
-            # But the UI currently only exposes Manual/Daily/Weekly.
-            # If a user sets "Weekly" for a normal playlist, they might expect "Every 7 days" OR "Every Monday".
-            # "Every Monday" is a safer, predictable default for "Weekly".
+            should_sync, reason = self._should_sync(frequency, last_sync_str, source, now)
             
             if should_sync:
-                logger.info(f"Triggering scheduled sync for playlist: {name} ({frequency})")
+                logger.info(f"Triggering scheduled sync for playlist: {name} (Reason: {reason})")
                 try:
                     await playlist_manager.sync_playlist(uuid)
                 except Exception as e:
                     logger.error(f"Scheduled sync failed for {name}: {e}")
             else:
-                 pass
+                 logger.debug(f"Skipping sync for {name} (Reason: {reason})")
+
+    def _should_sync(self, frequency: str, last_sync_str: str, source: str, now: datetime) -> tuple[bool, str]:
+        if frequency == SyncFrequency.MANUAL:
+            return False, "Manual frequency"
+            
+        if not last_sync_str:
+            return True, "Never synced"
+            
+        try:
+            # Handle ISO timestamp if present (contains 'T')
+            if 'T' in last_sync_str:
+                last_sync_date = datetime.fromisoformat(last_sync_str).date()
+            else:
+                last_sync_date = datetime.strptime(last_sync_str, "%Y-%m-%d").date()
+        except ValueError:
+            return True, "Invalid last_sync date format"
+            
+        today = now.date()
+        days_diff = (today - last_sync_date).days
+        
+        if frequency == SyncFrequency.DAILY:
+            if days_diff >= 1:
+                return True, f"Daily interval passed ({days_diff} days)"
+                
+        elif frequency == SyncFrequency.WEEKLY:
+            # 1. Robust Backup: > 7 days
+            if days_diff >= 7:
+                return True, f"Weekly backup interval passed ({days_diff} days)"
+            
+            # 2. Preferred Day for ListenBrainz: Tuesday
+            if source == PlaylistSource.LISTENBRAINZ:
+                # Tuesday is weekday 1
+                is_tuesday = (now.weekday() == 1)
+                if is_tuesday and today != last_sync_date:
+                    return True, "Tuesday preference for ListenBrainz"
+
+        elif frequency == SyncFrequency.MONTHLY:
+            # 1. Robust Backup: > 30 days
+            if days_diff >= 30:
+                return True, f"Monthly backup interval passed ({days_diff} days)"
+            
+            # 2. Preferred Day: 1st of month
+            if now.day == 1 and today != last_sync_date:
+                return True, "1st of month preference"
+
+        elif frequency == SyncFrequency.YEARLY:
+            # 1. Robust Backup: > 365 days
+            if days_diff >= 365:
+                return True, f"Yearly interval passed ({days_diff} days)"
+            
+            # 2. Preferred Day: Jan 1st
+            is_jan_first = (now.month == 1 and now.day == 1)
+            if is_jan_first and today != last_sync_date:
+                return True, "Jan 1st preference"
+                
+        return False, "No condition met"

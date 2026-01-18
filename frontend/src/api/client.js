@@ -115,6 +115,20 @@ class ApiClient {
     }
 
     /**
+     * Search for Spotify playlists
+     */
+    searchSpotifyPlaylists(query) {
+        return this.get("/spotify/search", { query });
+    }
+
+    /**
+     * Get Spotify playlist tracks
+     */
+    getSpotifyPlaylist(playlistId) {
+        return this.get(`/spotify/playlist/${playlistId}`);
+    }
+
+    /**
      * Get album tracks
      */
     getAlbumTracks(albumId) {
@@ -222,6 +236,14 @@ class ApiClient {
         });
 
         return eventSource;
+    }
+
+    /**
+     * Poll Spotify progress (JSON)
+     */
+    getSpotifySyncProgress(progressId) {
+        // Add timestamp to prevent browser caching
+        return this.get(`/spotify/progress/${progressId}`, { t: Date.now() });
     }
 
     /**
@@ -386,16 +408,27 @@ class ApiClient {
         return this.get("/playlists/monitored");
     }
 
-    monitorPlaylist(uuid, name, frequency, quality, source = "tidal", extra_config = null, use_playlist_folder = false) {
-        return this.post("/playlists/monitor", { uuid, name, frequency, quality, source, extra_config, use_playlist_folder });
+    monitorPlaylist(uuid, name, frequency, quality, source = "tidal", extra_config = null, use_playlist_folder = false, initialSyncProgressId = null, skipDownload = false) {
+        return this.post("/playlists/monitor", {
+            uuid,
+            name,
+            frequency,
+            quality,
+            source,
+            extra_config,
+            use_playlist_folder,
+            initial_sync_progress_id: initialSyncProgressId,
+            skip_download: skipDownload
+        });
     }
 
     removeMonitoredPlaylist(uuid) {
         return this.delete(`/playlists/${uuid}`);
     }
 
-    syncPlaylist(uuid) {
-        return this.post(`/playlists/${uuid}/sync`);
+    syncPlaylist(uuid, progressId = null) {
+        const url = `/playlists/${uuid}/sync${progressId ? `?progress_id=${progressId}` : ''}`;
+        return this.post(url);
     }
 
     getPlaylistFiles(uuid) {
@@ -506,6 +539,13 @@ class ApiClient {
      */
     getQueueSettings() {
         return this.get("/queue/settings");
+    }
+
+    /**
+     * Force sync covers to Jellyfin
+     */
+    syncJellyfinCovers() {
+        return this.post("/system/jellyfin/sync-covers");
     }
 }
 

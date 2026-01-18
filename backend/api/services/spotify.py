@@ -13,48 +13,71 @@ from api.clients.spotify import SpotifyClient
 
 logger = logging.getLogger(__name__)
 
-async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_validate: bool = False):
-    queue = asyncio.Queue()
-    lb_progress_queues[progress_id] = queue
-    
+from typing import List, Dict, Any, Optional, Callable, Awaitable
+
+async def fetch_and_validate_spotify_playlist(
+    spotify_id: str,
+    progress_callback: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    validate: bool = True
+) -> List[Dict]:
+    """
+    Reusable function to fetch and optionally validate Spotify playlist.
+    Returns a list of normalized track dictionaries.
+    """
     client = SpotifyClient()
     
+    import time
+    from api.state import import_states
+
+    # Initialize state if ID provided
+    progress_id = None
+    # We need progress_id to update state. 
+    # But this function signature doesn't accept progress_id except via callback closure?
+    # Refactor: pass update_state callback instead of progress_callback?
+    # Or keep callback but inside the callback update state.
+    
+    async def report(data: Dict):
+        # Add timestamp
+        data['timestamp'] = time.time()
+        
+        # Call legacy callback (queue) if present
+        if progress_callback:
+            await progress_callback(data)
+            
+    # NOTE: The caller (playlist_manager) defines the callback.
+    # We should update playlist_manager to update the state within the callback.
+    # This keeps service clean.
+
+
     try:
-        await queue.put({
+        await report({
             "type": "info",
-            "message": f"Fetching Spotify playlist {playlist_uuid}...",
+            "message": f"Fetching Spotify playlist {spotify_id}...",
             "progress": 0,
             "total": 0
         })
         
         # specific to spotify: get tracks
-        # Returns (tracks, is_limited)
-        spotify_tracks, is_limited = await client.get_playlist_tracks(playlist_uuid)
+        spotify_tracks, is_limited = await client.get_playlist_tracks(spotify_id)
         
         if not spotify_tracks:
             raise Exception("No tracks found or playlist is private/invalid.")
 
         total_tracks = len(spotify_tracks)
-        
         limit_msg = " [Truncated to 100 due to guest limit]" if is_limited else ""
         
-        # If validating, show starting validation message
-        if should_validate:
-             await queue.put({
-                "type": "info",
-                "message": f"Found {total_tracks} tracks{limit_msg}. Starting validation...",
-                "progress": 0,
-                "total": total_tracks
-            })
-        else:
-            await queue.put({
-                "type": "info",
-                "message": f"Found {total_tracks} tracks{limit_msg}. Processing...",
-                "progress": 0,
-                "total": total_tracks
-            })
+        msg = f"Found {total_tracks} tracks{limit_msg}. "
+        msg += "Starting validation..." if validate else "Processing..."
+        
+        await report({
+            "type": "info",
+            "message": msg,
+            "progress": 0,
+            "total": total_tracks
+        })
         
         validated_tracks = []
+        matches_found = 0
         
         for i, s_track in enumerate(spotify_tracks, 1):
             # Clean up text
@@ -62,8 +85,7 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_
             artist = fix_unicode(s_track.artist)
             album = fix_unicode(s_track.album) if s_track.album else None
             
-            # Create a mutable object to hold results, similar to PlaylistTrack
-            # We use a simple class or dict wrapper for compatibility with search_track_with_fallback
+            # Mutable container for search results
             class TrackContainer:
                 def __init__(self):
                     self.title = title
@@ -74,24 +96,32 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_
                     self.tidal_album_id = None
                     self.tidal_exists = False
                     self.cover = None
-            
+                    self.track_number = None # Initialize track_number
+
             track_obj = TrackContainer()
             
-            if should_validate:
+            # Perform search
+            if validate:
+                await search_track_with_fallback(artist, title, track_obj)
+                
+                # Check match and increment counter
+                if track_obj.tidal_exists:
+                    matches_found += 1
+                
                 display_text = f"{artist} - {title}"
-                await queue.put({
+                await report({
                     "type": "validating",
                     "message": f"Validating: {display_text}",
                     "progress": i,
                     "total": total_tracks,
+                    "matches_found": matches_found,
                     "current_track": {
                         "artist": artist,
-                        "title": title
+                        "title": title,
+                        "matched": track_obj.tidal_exists
                     }
                 })
-                # Perform search
-                await search_track_with_fallback(artist, title, track_obj)
-                # Small delay to prevent rate limit hammering (internal queue)
+                # Small delay
                 await asyncio.sleep(0.05)
             
             validated_tracks.append({
@@ -103,32 +133,58 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_
                 "tidal_album_id": track_obj.tidal_album_id,
                 "tidal_exists": track_obj.tidal_exists,
                 "cover": track_obj.cover,
-                "db_id": s_track.spotify_id # Keep original ID for reference
+                "track_number": getattr(track_obj, 'track_number', None),
+                "db_id": s_track.spotify_id
             })
 
         found_count = sum(1 for t in validated_tracks if t["tidal_exists"])
         
-        await queue.put({
-            "type": "complete",
-            "message": f"Process complete: {found_count}/{total_tracks} matched" if should_validate else f"Fetched {total_tracks} from Spotify",
+        await report({
+            "type": "analysis_complete",
+            "message": f"Process complete: {found_count}/{total_tracks} matched" if validate else f"Fetched {total_tracks} from Spotify",
             "progress": total_tracks,
             "total": total_tracks,
             "tracks": validated_tracks,
             "found_count": found_count,
             "is_limited": is_limited
         })
+        
+        return validated_tracks
 
     except Exception as e:
         log_error(f"Spotify processing error: {str(e)}")
-        await queue.put({
+        await report({
             "type": "error",
             "message": str(e),
             "progress": 0,
             "total": 0
         })
+        raise
     finally:
         await client.close()
-        await queue.put(None) # Signal end of stream
+
+async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_validate: bool = False):
+    """
+    Legacy wrapper for existing endpoint using lb_progress_queues
+    """
+    queue = asyncio.Queue()
+    lb_progress_queues[progress_id] = queue
+    
+    async def progress_adapter(data):
+        await queue.put(data)
+        
+    try:
+        await fetch_and_validate_spotify_playlist(
+            playlist_uuid,
+            progress_callback=progress_adapter,
+            validate=should_validate
+        )
+    except Exception:
+        # Error is already reported to queue in service
+        pass
+    finally:
+        await queue.put(None) # Signal end
+
 
 
 async def generate_spotify_m3u8(playlist_name: str, tracks: List[Dict[str, Any]]) -> Dict[str, Any]:

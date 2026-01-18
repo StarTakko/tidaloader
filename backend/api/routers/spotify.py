@@ -15,6 +15,40 @@ from api.services.spotify import process_spotify_playlist, generate_spotify_m3u8
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+from api.clients.spotify import SpotifyClient
+
+@router.get("/api/spotify/search")
+async def search_spotify_playlists(
+    query: str,
+    user: str = Depends(require_auth)
+):
+    """Search for Spotify playlists"""
+    client = SpotifyClient()
+    try:
+        playlists = await client.search_playlists(query)
+        return {"items": playlists}
+    except Exception as e:
+        logger.error(f"Search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await client.close()
+
+@router.get("/api/spotify/playlist/{playlist_id}")
+async def get_spotify_playlist_tracks(
+    playlist_id: str,
+    user: str = Depends(require_auth)
+):
+    """Get tracks from a Spotify playlist"""
+    client = SpotifyClient()
+    try:
+        tracks, _ = await client.get_playlist_tracks(playlist_id)
+        return {"items": tracks}
+    except Exception as e:
+        logger.error(f"Failed to fetch playlist tracks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await client.close()
+
 def extract_spotify_id(url: str) -> str:
     # Match playlist ID from various formats
     # https://open.spotify.com/playlist/37i9dQZF1DX5Ejj077clxu
@@ -53,44 +87,32 @@ async def generate_spotify_playlist(
     return {"progress_id": progress_id}
 
 @router.get("/api/spotify/progress/{progress_id}")
-async def spotify_progress_stream(
+async def get_spotify_progress(
     progress_id: str,
-    username: str = Depends(require_auth_stream)
+    user: str = Depends(require_auth)
 ):
-    async def event_generator():
-        if progress_id not in lb_progress_queues:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Invalid progress ID'})}\n\n"
-            return
-        
-        queue = lb_progress_queues[progress_id]
-        
-        try:
-            while True:
-                try:
-                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    
-                    if message is None:
-                        break
-                    
-                    yield f"data: {json.dumps(message, ensure_ascii=False)}\n\n"
-                    
-                except asyncio.TimeoutError:
-                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-                    
-        finally:
-            if progress_id in lb_progress_queues:
-                del lb_progress_queues[progress_id]
+    """
+    Polling endpoint for progress updates.
+    Returns the current state from memory.
+    """
+    from api.state import import_states
+    from fastapi.responses import JSONResponse
     
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Content-Type": "text/event-stream; charset=utf-8"
-        }
-    )
+    headers = {"Cache-Control": "no-store, max-age=0"}
+    
+    if progress_id not in import_states:
+        logger.warning(f"POLL MISS: {progress_id} not found in {list(import_states.keys())}")
+        return JSONResponse(content={
+            "status": "pending",
+            "messages": [],
+            "current": 0,
+            "total": 0,
+            "matches": 0
+        }, headers=headers)
+    
+    state = import_states[progress_id]
+    logger.info(f"POLL HIT: {progress_id} -> Status={state.get('status')} MsgCount={len(state.get('messages', []))}")
+    return JSONResponse(content=state, headers=headers)
 
 
 @router.post("/api/spotify/generate-m3u8")
