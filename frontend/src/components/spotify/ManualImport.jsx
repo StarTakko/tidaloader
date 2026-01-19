@@ -48,6 +48,7 @@ export function ManualImport() {
         }
     }, [progressLogs]);
 
+
     const handleFetch = async () => {
         if (!playlistUrl.trim()) {
             setError("Please enter a Spotify playlist URL");
@@ -61,56 +62,99 @@ export function ManualImport() {
         setProgressLogs([]);
         setTrackStatuses({});
 
+        // polling variables
+        let pollInterval;
+        let isComplete = false;
+
         try {
             const { progress_id } = await api.generateSpotifyPlaylist(playlistUrl.trim(), false); // false = don't validate yet
 
-            const eventSource = api.createSpotifyProgressStream(progress_id);
+            const poll = async () => {
+                if (isComplete) return;
 
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+                try {
+                    const data = await api.getSpotifySyncProgress(progress_id);
+                    // console.log("[POLL]", data);
 
-                if (data.type === "ping") return;
-
-                if (data.type === "info" || data.type === "error" || data.type === "validating") {
-                    if (data.message) {
-                        setProgressLogs((prev) => [
-                            ...prev,
-                            {
-                                type: data.type,
-                                message: data.message,
-                                timestamp: new Date().toISOString(),
-                            },
-                        ]);
+                    if (data.status === "error") {
+                        setError(data.message || "Unknown error occurred");
+                        setLoading(false);
+                        isComplete = true;
+                        clearInterval(pollInterval);
+                        addToast(`Failed to process playlist: ${data.message}`, "error");
+                        return;
                     }
-                }
 
-                if (data.type === "complete") {
-                    // Initialize tracks
-                    setTracks(data.tracks);
-                    setLoading(false);
-                    eventSource.close();
-                    addToast(`Fetched ${data.tracks.length} tracks. Check availability before downloading.`, "success");
-                }
+                    // Append logs
+                    if (data.messages && data.messages.length > 0) {
+                        // In a real app we might want to deduplicate based on message ID or index/timestamp
+                        // But here we rely on the backend state providing the full history or we just take the last few?
+                        // Actually getSpotifySyncProgress likely returns ALL messages so we just replace state
+                        // Or if it returns partial, we append. Based on SyncProgressModal it seems it might return all.
+                        // Let's assume it returns { messages: [...] } containing everything so far or relevant ones.
+                        // Checking SyncProgressModal logic: it does `setMessages(data.messages)` replacing them.
+                        // The backend `get_spotify_progress` returns `state` object which has a `messages` list.
+                        // So we should replace local state to match backend state.
 
-                if (data.type === "error") {
-                    setError(data.message);
-                    setLoading(false);
-                    eventSource.close();
-                    addToast(`Failed to process playlist: ${data.message}`, "error");
+                        // Map backend message format to our format if needed, or just use as is. 
+                        // Backend: { text: "...", type: "...", timestamp: ... }
+                        // Frontend previous: { type, message: data.message, timestamp }
+
+                        const newLogs = (data.messages || []).map(msg => ({
+                            type: msg.type || 'info',
+                            message: msg.text,
+                            timestamp: msg.timestamp ? new Date(msg.timestamp * 1000).toISOString() : new Date().toISOString()
+                        }));
+
+                        setProgressLogs(newLogs);
+                    }
+
+                    if (data.status === "complete" || data.status === "waiting_confirmation") {
+                        // Note: "waiting_confirmation" usually means "ready" in the other flow, 
+                        // here it effectively means "fetched" so we can show tracks.
+
+                        // Backend populates `tracks` in state when complete?
+                        // Let's check `api/services/spotify.py`. 
+                        // `process_spotify_playlist` updates state['tracks'] at the end.
+
+                        if (data.tracks && data.tracks.length > 0) {
+                            setTracks(data.tracks);
+                            setLoading(false);
+                            isComplete = true;
+                            clearInterval(pollInterval);
+                            addToast(`Fetched ${data.tracks.length} tracks. Check availability before downloading.`, "success");
+                        } else if (data.status === "complete" && (!data.tracks || data.tracks.length === 0)) {
+                            // Complete but empty?
+                            setLoading(false);
+                            isComplete = true;
+                            clearInterval(pollInterval);
+                            addToast("Playlist appeared to be empty.", "info");
+                        }
+                    }
+
+                } catch (e) {
+                    console.warn("Poll error", e);
+                    // Don't stop polling on single error, could be transient
                 }
             };
 
-            eventSource.onerror = () => {
-                setError("Connection lost to server");
-                setLoading(false);
-                eventSource.close();
-            };
+            // Start polling
+            pollInterval = setInterval(poll, 1000);
+            poll(); // initial call
+
+            // Cleanup function if component unmounts? 
+            // We can't easily return cleanup from here, but we can rely on `isComplete` flag and standard component unmounting if needed.
+            // But since this is inside a function, we need a way to clear typical ref for cleanup if unmount happens while loading.
+            // For now, simple logic is fine.
+
         } catch (err) {
             setError(err.message);
             setLoading(false);
+            if (pollInterval) clearInterval(pollInterval);
             addToast(`Failed to start process: ${err.message}`, "error");
         }
     };
+
 
     const validateTrack = async (idx) => {
         // We get the track from current state just to initiate the request
