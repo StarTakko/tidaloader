@@ -1,5 +1,18 @@
 export const releaseNotes = [
     {
+        version: "1.3.2",
+        date: "2026-01-19",
+        title: "Spotify Monitoring & Enhancements",
+        changes: [
+            "New Feature: Monitored Playlists for Spotify! Search, subscribe, and auto-sync Spotify playlists.",
+            "Revised Manual Import: Dedicated tab for Spotify URL imports with secure polling connections.",
+            "Jellyfin Sync: Added 'Sync Covers' button to force re-upload playlist covers without full rescans.",
+            "Enhanced Spotify Search: Search by playlist name directly from the UI.",
+            "Backend Stability: Fixed circular dependencies and improved endpoint validation logic.",
+            "Fixed connection dropouts during manual playlist imports."
+        ]
+    },
+    {
         version: "1.3.1",
         date: "2026-01-01",
         title: "Standardized Lyrics & Compatibility Fixes",
