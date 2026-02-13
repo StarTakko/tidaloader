@@ -5,10 +5,9 @@ import traceback
 import mimetypes
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 
-from api.auth import require_auth
 from api.models import DownloadTrackRequest
 from api.settings import DOWNLOAD_DIR, MP3_QUALITY_MAP, OPUS_QUALITY_MAP
 from api.state import active_downloads
@@ -25,6 +24,10 @@ router = APIRouter()
 
 def _build_download_url(track_id: int) -> str:
     return f"/api/download/file/{track_id}"
+
+
+def _build_lrc_url(track_id: int) -> str:
+    return f"/api/download/lrc/{track_id}"
 
 
 def _is_within_download_dir(file_path: Path) -> bool:
@@ -63,16 +66,14 @@ def _resolve_completed_download_path(track_id: int) -> Path:
 
 @router.post("/api/download/start")
 async def start_download(
-    background_tasks: BackgroundTasks,
-    username: str = Depends(require_auth)
+    background_tasks: BackgroundTasks
 ):
     return {"status": "started"}
 
 @router.get("/api/download/stream/{track_id}")
 async def get_stream_url(
     track_id: int,
-    quality: str = "LOSSLESS",
-    username: str = Depends(require_auth)
+    quality: str = "LOSSLESS"
 ):
     try:
         log_info(f"Getting stream URL for track {track_id} at {quality} quality...")
@@ -104,7 +105,7 @@ async def get_stream_url(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/download/state")
-async def get_download_states(username: str = Depends(require_auth)):
+async def get_download_states():
     return {
         "active": download_state_manager.get_all_active(),
         "completed": download_state_manager.get_all_completed(),
@@ -113,8 +114,7 @@ async def get_download_states(username: str = Depends(require_auth)):
 
 @router.get("/api/download/progress/{track_id}")
 async def download_progress_stream(
-    track_id: int,
-    username: str = Depends(require_auth)
+    track_id: int
 ):
     async def event_generator():
         last_progress = -1
@@ -191,8 +191,7 @@ async def download_progress_stream(
 @router.get("/api/download/file/{track_id}")
 async def get_downloaded_file(
     track_id: int,
-    inline: bool = False,
-    username: str = Depends(require_auth)
+    inline: bool = False
 ):
     file_path = _resolve_completed_download_path(track_id)
     media_type, _ = mimetypes.guess_type(str(file_path))
@@ -215,11 +214,28 @@ async def get_downloaded_file(
         headers={"Cache-Control": "no-store"}
     )
 
+
+@router.get("/api/download/lrc/{track_id}")
+async def get_downloaded_lrc(track_id: int):
+    audio_path = _resolve_completed_download_path(track_id)
+    lrc_path = audio_path.with_suffix(".lrc").resolve()
+
+    if not _is_within_download_dir(lrc_path):
+        raise HTTPException(status_code=404, detail="Lyrics file not found")
+    if not lrc_path.exists() or not lrc_path.is_file():
+        raise HTTPException(status_code=404, detail="Lyrics file not found")
+
+    return FileResponse(
+        path=str(lrc_path),
+        filename=lrc_path.name,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-store"}
+    )
+
 @router.post("/api/download/track")
 async def download_track_server_side(
     request: DownloadTrackRequest,
-    background_tasks: BackgroundTasks,
-    username: str = Depends(require_auth)
+    background_tasks: BackgroundTasks
 ):
     try:
 
@@ -270,6 +286,7 @@ async def download_track_server_side(
                         "status": "exists",
                         "filename": saved_filename or 'Completed',
                         "download_url": _build_download_url(request.track_id),
+                        "lrc_url": _build_lrc_url(request.track_id),
                         "message": "Download already completed"
                     }
                 else:
@@ -440,6 +457,8 @@ async def download_track_server_side(
                 "status": "exists",
                 "filename": final_filename,
                 "path": str(final_filepath),
+                "download_url": _build_download_url(request.track_id),
+                "lrc_url": _build_lrc_url(request.track_id),
                 "message": f"File already exists: {artist_folder}/{album_folder}/{final_filename}"
             }
         
@@ -466,6 +485,7 @@ async def download_track_server_side(
             "filename": final_filename,
             "path": str(final_filepath),
             "download_url": _build_download_url(request.track_id),
+            "lrc_url": _build_lrc_url(request.track_id),
             "message": f"Download started: {artist_folder}/{album_folder}/{final_filename}"
         }
         
@@ -523,15 +543,14 @@ class QueueAddRequestModel(BaseModel):
 
 
 @router.get("/api/queue")
-async def get_queue_state(username: str = Depends(require_auth)):
+async def get_queue_state():
     """Get current queue state including queue, active, completed, and failed items"""
     return queue_manager.get_state()
 
 
 @router.post("/api/queue/add")
 async def add_to_queue(
-    request: QueueAddRequestModel,
-    username: str = Depends(require_auth)
+    request: QueueAddRequestModel
 ):
     """Add tracks to the download queue"""
     if request.tracks:
@@ -561,7 +580,7 @@ async def add_to_queue(
             organization_template=track.organization_template,
             group_compilations=track.group_compilations,
             use_musicbrainz=track.use_musicbrainz,
-            added_by=username
+            added_by="public"
         )
         items.append(item)
     
@@ -575,8 +594,7 @@ async def add_to_queue(
 
 @router.delete("/api/queue/{track_id}")
 async def remove_from_queue(
-    track_id: int,
-    username: str = Depends(require_auth)
+    track_id: int
 ):
     """Remove a track from the queue"""
     success = await queue_manager.remove_from_queue(track_id)
@@ -584,28 +602,28 @@ async def remove_from_queue(
 
 
 @router.post("/api/queue/clear")
-async def clear_queue(username: str = Depends(require_auth)):
+async def clear_queue():
     """Clear all queued items (not active downloads)"""
     count = await queue_manager.clear_queue()
     return {"cleared": count}
 
 
 @router.post("/api/queue/clear-completed")
-async def clear_completed(username: str = Depends(require_auth)):
+async def clear_completed():
     """Clear all completed items"""
     count = await queue_manager.clear_completed()
     return {"cleared": count}
 
 
 @router.post("/api/queue/clear-failed")
-async def clear_failed(username: str = Depends(require_auth)):
+async def clear_failed():
     """Clear all failed items"""
     count = await queue_manager.clear_failed()
     return {"cleared": count}
 
 
 @router.post("/api/queue/retry-failed")
-async def retry_all_failed(username: str = Depends(require_auth)):
+async def retry_all_failed():
     """Retry all failed downloads"""
     count = await queue_manager.retry_failed()
     return {"retried": count}
@@ -613,8 +631,7 @@ async def retry_all_failed(username: str = Depends(require_auth)):
 
 @router.post("/api/queue/retry/{track_id}")
 async def retry_single_failed(
-    track_id: int,
-    username: str = Depends(require_auth)
+    track_id: int
 ):
     """Retry a single failed download"""
     success = await queue_manager.retry_single(track_id)
@@ -622,7 +639,7 @@ async def retry_single_failed(
 
 
 @router.post("/api/queue/start")
-async def start_queue_processing(username: str = Depends(require_auth)):
+async def start_queue_processing():
     """Manually start queue processing (for non-auto mode)"""
     if QUEUE_AUTO_PROCESS:
         return {"message": "Auto-processing is enabled, queue processes automatically"}
@@ -632,14 +649,14 @@ async def start_queue_processing(username: str = Depends(require_auth)):
 
 
 @router.post("/api/queue/stop")
-async def stop_queue_processing(username: str = Depends(require_auth)):
+async def stop_queue_processing():
     """Stop queue processing (won't cancel active downloads)"""
     await queue_manager.stop_processing()
     return {"status": "stopped"}
 
 
 @router.get("/api/queue/settings")
-async def get_queue_settings(username: str = Depends(require_auth)):
+async def get_queue_settings():
     """Get queue settings"""
     return {
         "max_concurrent": MAX_CONCURRENT_DOWNLOADS,

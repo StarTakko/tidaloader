@@ -13,6 +13,11 @@ def test_start_download_endpoint(client):
     assert response.status_code == 200
     assert response.json() == {"status": "started"}
 
+def test_start_download_endpoint_without_auth(client):
+    response = client.post("/api/download/start")
+    assert response.status_code == 200
+    assert response.json() == {"status": "started"}
+
 def test_get_stream_url_success(client, mock_tidal_client):
     # Setup mock
     mock_tidal_client.get_track.return_value = {
@@ -116,4 +121,45 @@ def test_get_downloaded_file_blocks_outside_download_dir(client, monkeypatch, tm
     )
 
     response = client.get("/api/download/file/123", headers=AUTH_HEADER)
+    assert response.status_code == 404
+
+
+def test_get_downloaded_lrc_success(client, monkeypatch, tmp_path):
+    song = tmp_path / "artist" / "album" / "01 - Test.mp3"
+    lrc = song.with_suffix(".lrc")
+    song.parent.mkdir(parents=True, exist_ok=True)
+    song.write_bytes(b"test-audio-data")
+    lrc.write_text("[00:00.00] Test line", encoding="utf-8")
+
+    monkeypatch.setattr("api.routers.downloads.DOWNLOAD_DIR", tmp_path)
+    monkeypatch.setattr(
+        "api.routers.downloads.download_state_manager.get_download_state",
+        lambda track_id: {
+            "status": "completed",
+            "filename": song.name,
+            "metadata": {"final_path": str(song)},
+        },
+    )
+
+    response = client.get("/api/download/lrc/123")
+    assert response.status_code == 200
+    assert "Test line" in response.text
+
+
+def test_get_downloaded_lrc_not_found(client, monkeypatch, tmp_path):
+    song = tmp_path / "artist" / "album" / "01 - Test.mp3"
+    song.parent.mkdir(parents=True, exist_ok=True)
+    song.write_bytes(b"test-audio-data")
+
+    monkeypatch.setattr("api.routers.downloads.DOWNLOAD_DIR", tmp_path)
+    monkeypatch.setattr(
+        "api.routers.downloads.download_state_manager.get_download_state",
+        lambda track_id: {
+            "status": "completed",
+            "filename": song.name,
+            "metadata": {"final_path": str(song)},
+        },
+    )
+
+    response = client.get("/api/download/lrc/123")
     assert response.status_code == 404
