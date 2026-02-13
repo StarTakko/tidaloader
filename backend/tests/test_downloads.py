@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock
 import os
+from pathlib import Path
 
 # Set dummy auth for tests
 os.environ["AUTH_USERNAME"] = "test"
@@ -65,3 +66,54 @@ def test_download_track_post(client, mock_tidal_client, mock_background_tasks):
     data = response.json()
     assert data["status"] == "downloading"
     assert "filename" in data
+
+
+def test_get_downloaded_file_success(client, monkeypatch, tmp_path):
+    song = tmp_path / "artist" / "album" / "01 - Test.mp3"
+    song.parent.mkdir(parents=True, exist_ok=True)
+    song.write_bytes(b"test-audio-data")
+
+    monkeypatch.setattr("api.routers.downloads.DOWNLOAD_DIR", tmp_path)
+    monkeypatch.setattr(
+        "api.routers.downloads.download_state_manager.get_download_state",
+        lambda track_id: {
+            "status": "completed",
+            "filename": song.name,
+            "metadata": {"final_path": str(song)},
+        },
+    )
+
+    response = client.get("/api/download/file/123", headers=AUTH_HEADER)
+    assert response.status_code == 200
+    assert response.content == b"test-audio-data"
+
+
+def test_get_downloaded_file_not_completed(client, monkeypatch):
+    monkeypatch.setattr(
+        "api.routers.downloads.download_state_manager.get_download_state",
+        lambda track_id: {"status": "downloading"},
+    )
+
+    response = client.get("/api/download/file/123", headers=AUTH_HEADER)
+    assert response.status_code == 404
+
+
+def test_get_downloaded_file_blocks_outside_download_dir(client, monkeypatch, tmp_path):
+    allowed_dir = tmp_path / "music"
+    allowed_dir.mkdir(parents=True, exist_ok=True)
+
+    outside_file = tmp_path / "outside.mp3"
+    outside_file.write_bytes(b"test-audio-data")
+
+    monkeypatch.setattr("api.routers.downloads.DOWNLOAD_DIR", allowed_dir)
+    monkeypatch.setattr(
+        "api.routers.downloads.download_state_manager.get_download_state",
+        lambda track_id: {
+            "status": "completed",
+            "filename": Path(outside_file).name,
+            "metadata": {"final_path": str(outside_file)},
+        },
+    )
+
+    response = client.get("/api/download/file/123", headers=AUTH_HEADER)
+    assert response.status_code == 404

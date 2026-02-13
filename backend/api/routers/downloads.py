@@ -2,10 +2,11 @@ import re
 import asyncio
 import json
 import traceback
+import mimetypes
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 
 from api.auth import require_auth
 from api.models import DownloadTrackRequest
@@ -20,6 +21,45 @@ from api.services.download import download_file_async
 from queue_manager import queue_manager, QueueItem, QUEUE_AUTO_PROCESS, MAX_CONCURRENT_DOWNLOADS
 
 router = APIRouter()
+
+
+def _build_download_url(track_id: int) -> str:
+    return f"/api/download/file/{track_id}"
+
+
+def _is_within_download_dir(file_path: Path) -> bool:
+    try:
+        file_path.resolve().relative_to(DOWNLOAD_DIR.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_completed_download_path(track_id: int) -> Path:
+    saved_state = download_state_manager.get_download_state(track_id)
+    if not saved_state or saved_state.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="Track is not downloaded")
+
+    metadata = saved_state.get("metadata", {}) or {}
+    candidates = []
+
+    final_path = metadata.get("final_path")
+    if final_path:
+        candidates.append(Path(final_path))
+
+    filename = saved_state.get("filename")
+    if filename:
+        candidates.append(DOWNLOAD_DIR / filename)
+
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if not _is_within_download_dir(resolved):
+            log_warning(f"Blocked file outside download directory: {resolved}")
+            continue
+        if resolved.exists() and resolved.is_file():
+            return resolved
+
+    raise HTTPException(status_code=404, detail="Downloaded file not found")
 
 @router.post("/api/download/start")
 async def start_download(
@@ -147,6 +187,34 @@ async def download_progress_stream(
         }
     )
 
+
+@router.get("/api/download/file/{track_id}")
+async def get_downloaded_file(
+    track_id: int,
+    inline: bool = False,
+    username: str = Depends(require_auth)
+):
+    file_path = _resolve_completed_download_path(track_id)
+    media_type, _ = mimetypes.guess_type(str(file_path))
+
+    if inline:
+        safe_name = file_path.name.replace('"', "")
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_type or "application/octet-stream",
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": f'inline; filename="{safe_name}"'
+            }
+        )
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type=media_type or "application/octet-stream",
+        headers={"Cache-Control": "no-store"}
+    )
+
 @router.post("/api/download/track")
 async def download_track_server_side(
     request: DownloadTrackRequest,
@@ -201,6 +269,7 @@ async def download_track_server_side(
                     return {
                         "status": "exists",
                         "filename": saved_filename or 'Completed',
+                        "download_url": _build_download_url(request.track_id),
                         "message": "Download already completed"
                     }
                 else:
@@ -396,6 +465,7 @@ async def download_track_server_side(
             "status": "downloading",
             "filename": final_filename,
             "path": str(final_filepath),
+            "download_url": _build_download_url(request.track_id),
             "message": f"Download started: {artist_folder}/{album_folder}/{final_filename}"
         }
         
